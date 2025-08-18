@@ -1,0 +1,244 @@
+from typing import List, Optional, Literal
+from pydantic import BaseModel, Field, AliasChoices, field_validator
+
+
+class SheetsValues(BaseModel):
+    range: str
+    values: List[List[str]] = Field(default_factory=list)
+
+class SheetsValuesInTo(SheetsValues):
+    ...
+
+class SheetsValuesOut(SheetsValues):
+    major_dimension: Literal["ROWS", "COLUMNS"] = Field(default="ROWS",
+                                                        alias="majorDimension",
+                                                        validation_alias=AliasChoices("majorDimension",
+                                                                                      "major_dimension"))
+
+    model_config = {
+        "populate_by_name": True
+    }
+# ===== БАЗОВЫЕ ТИПЫ =====
+
+class Color(BaseModel):
+    # Google ждёт 0..1
+    red: Optional[float] = None
+    green: Optional[float] = None
+    blue: Optional[float] = None
+    alpha: Optional[float] = None
+
+    model_config = {
+        "populate_by_name": True
+    }
+
+class TextFormat(BaseModel):
+    bold: Optional[bool] = None
+    italic: Optional[bool] = None
+    underline: Optional[bool] = None
+    strikethrough: Optional[bool] = None
+    font_family: Optional[str] = Field(default="Arial",
+                                       alias="fontFamily",
+                                       validation_alias=AliasChoices("font_family",
+                                                                     "fontFamily"))
+    font_size: Optional[int] = Field(default=12,
+                                     alias="fontSize",
+                                     validation_alias=AliasChoices("font_size",
+                                                                   "fontSize"))
+    foreground_color: Optional[Color] = Field(default=None,
+                                              alias="foregroundColor",
+                                              validation_alias=AliasChoices("foregroundColor",
+                                                                            "foregroundColor"))
+
+    model_config = {
+        "populate_by_name": True
+    }
+
+class HorizontalAlign(str):
+    pass
+class VerticalAlign(str):
+    pass
+
+HorizontalAlignment = Literal["LEFT", "CENTER", "RIGHT"]
+VerticalAlignment = Literal["TOP", "MIDDLE", "BOTTOM"]
+
+class CellFormat(BaseModel):
+    # см. https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#CellFormat
+    text_format: Optional[TextFormat] = Field(default=None,
+                                              alias="textFormat",
+                                              validation_alias=AliasChoices("text_format",
+                                                                            "textFormat"))
+    background_color: Optional[Color] = Field(default=None,
+                                              alias="backgroundColor",
+                                              validation_alias=AliasChoices("backgroundColor",
+                                                                            "backgroundColor"))
+    horizontal_alignment: Optional[HorizontalAlignment] = Field(default=None,
+                                                                alias="horizontalAlignment",
+                                                                validation_alias=AliasChoices("horizontalAlignment",
+                                                                                                "horizontalAlignment"))
+    vertical_alignment: Optional[VerticalAlignment] = Field(default=None,
+                                                            alias="verticalAlignment",
+                                                            validation_alias=AliasChoices("verticalAlignment",
+                                                                                          "verticalAlignment"))
+    wrap_strategy: Optional[Literal["WRAP",
+                                    "OVERFLOW_CELL",
+                                    "CLIP"]] = Field(default="WRAP",
+                                                     alias="wrapStrategy",
+                                                     validation_alias=AliasChoices("wrapStrategy",
+                                                                                    "wrapStrategy"))
+    number_format: Optional[dict] = Field(default=None,
+                                          alias="numberFormat",# {"type": "NUMBER", "pattern": "0.00"}
+                                          validation_alias=AliasChoices("numberFormat",
+                                                                        "numberFormat"))
+
+    model_config = {
+        "populate_by_name": True
+    }
+
+class GridRange(BaseModel):
+    # Индексы нулевые, end* не включительно
+    sheet_id: int = Field(alias="sheetId",
+                          validation_alias=AliasChoices("sheet_id", "sheetId"))
+    start_row_index: Optional[int] = Field(default=None,
+                                           alias="startRowIndex",
+                                           validation_alias=AliasChoices("start_row_index",
+                                                                         "startRowIndex"))
+    end_row_index: Optional[int] = Field(default=None,
+                                         alias="endRowIndex",
+                                         validation_alias=AliasChoices("end_row_index",
+                                                                       "endRowIndex"))
+    start_column_index: Optional[int] = Field(default=None,
+                                              alias="startColumnIndex",
+                                              validation_alias=AliasChoices("start_column_index",
+                                                                            "startColumnIndex"))
+    end_column_index: Optional[int] = Field(default=None,
+                                            alias="endColumnIndex",
+                                            validation_alias=AliasChoices("end_column_index",
+                                                                            "endColumnIndex"))
+
+    model_config = {
+        "populate_by_name": True
+    }
+# ===== REPEAT CELL =====
+
+class CellData(BaseModel):
+    user_entered_value: Optional[dict] = Field(default=None,
+                                               alias="userEnteredValue",
+                                               validation_alias=AliasChoices("user_entered_value",
+                                                                             "userEnteredValue"))  # как правило для форматирования не нужен
+    user_entered_format: Optional[CellFormat] = Field(default=None,
+                                                      alias="userEnteredFormat",
+                                                      validation_alias=AliasChoices("user_entered_format",
+                                                                                    "userEnteredFormat"))  # форматирование ячейки
+
+    model_config = {
+        "populate_by_name": True
+    }
+
+FieldPath =(
+    "userEnteredFormat.textFormat.bold",
+    "userEnteredFormat.textFormat.italic",
+    "userEnteredFormat.textFormat.underline",
+    "userEnteredFormat.textFormat.strikethrough",
+    "userEnteredFormat.textFormat.fontFamily",
+    "userEnteredFormat.textFormat.fontSize",
+    "userEnteredFormat.textFormat.foregroundColor",
+    "userEnteredFormat.backgroundColor",
+    "userEnteredFormat.horizontalAlignment",
+    "userEnteredFormat.verticalAlignment",
+    "userEnteredFormat.wrapStrategy",
+)
+
+FilePathLiteral = Literal[*FieldPath]
+
+class RepeatCellRequest(BaseModel):
+    range: GridRange
+    cell: CellData
+    fields: List[FieldPathLiteral]
+
+    @field_validator("fields")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        v = ",".join(v) if isinstance(v, list) else v
+        if v not in tuple(FieldPath):
+            raise ValueError(f"ожидали {FieldPath}")
+        return v
+    # например "userEnteredFormat.textFormat.bold, userEnteredFormat.backgroundColor"
+
+# ===== MERGE CELLS =====
+
+class MergeCellsRequest(BaseModel):
+    range: GridRange
+    merge_type: Literal["MERGE_ALL",
+                        "MERGE_COLUMNS",
+                        "MERGE_ROWS"] = Field(alias="mergeType",
+                                              validation_alias=AliasChoices("merge_type",
+                                                                            "mergeType"))
+
+# ===== BORDERS =====
+
+class Border(BaseModel):
+    style: Optional[Literal["DOTTED", "DASHED", "SOLID", "SOLID_MEDIUM", "SOLID_THICK", "DOUBLE"]] = None
+    width: Optional[int] = None
+    color: Optional[Color] = None
+
+class UpdateBordersRequest(BaseModel):
+    range: GridRange
+    top: Optional[Border] = None
+    bottom: Optional[Border] = None
+    left: Optional[Border] = None
+    right: Optional[Border] = None
+    inner_horizontal: Optional[Border] = Field(default=None,
+                                               alias="innerHorizontal",
+                                               validation_alias=AliasChoices("inner_horizontal",
+                                                                             "innerHorizontal"))
+    inner_vertical: Optional[Border] = Field(default=None,
+                                             alias="innerVertical",
+                                             validation_alias=AliasChoices("inner_vertical",
+                                                                           "innerVertical"))
+
+    model_config = {
+        "populate_by_name": True
+    }
+
+# ===== AUTO-RESIZE =====
+
+class DimensionRange(BaseModel):
+    sheet_id: int = Field(alias="sheetId",
+                          validation_alias=AliasChoices("sheet_id", "sheetId"))
+    dimension: Literal["ROWS", "COLUMNS"]
+    start_index: int = Field(alias="startIndex",
+                             validation_alias=AliasChoices("start_index", "startIndex"))
+    end_index: int = Field(alias="endIndex",
+                           validation_alias=AliasChoices("end_index", "endIndex"))
+    model_config = {
+        "populate_by_name": True
+    }
+
+class AutoResizeDimensionsRequest(BaseModel):
+    dimensions: DimensionRange
+
+# ===== ОБЪЕДИНИТЕЛЬНЫЙ ТИП REQUEST =====
+
+class Request(BaseModel):
+    repeat_cell: Optional[RepeatCellRequest] = Field(default=None,
+                                                     alias="repeatCell",
+                                                     validation_alias=AliasChoices("repeat_cell",
+                                                                                   "repeatCell"))
+    merge_cells: Optional[MergeCellsRequest] = Field(default=None,
+                                                     alias="mergeCells",
+                                                     validation_alias=AliasChoices("merge_cells",
+                                                                                   "mergeCells"))
+    update_borders: Optional[UpdateBordersRequest] = Field(default=None,
+                                                           alias="updateBorders")
+    auto_resize_dimensions: Optional[AutoResizeDimensionsRequest] = Field(default=None,
+                                                                          alias="autoResizeDimensions",
+                                                                          validation_alias=AliasChoices("auto_resize_dimensions",
+                                                                                                        "autoResizeDimensions"))
+
+    model_config = {
+        "populate_by_name": True,
+        "extra": "forbid"  # чтоб не проскочило лишнего forbid --> строго следить за полями
+    }
+
+class BatchUpdateFormatBody(BaseModel):
+    requests: List[Request]
