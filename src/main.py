@@ -39,7 +39,6 @@ async def main() -> None:
     gr_cell_format = CellFormat(text_format=text_format)
     gr_cell = CellData(user_entered_format=gr_cell_format)
     gr_fields = ["userEnteredFormat.textFormat.bold","userEnteredFormat.backgroundColor"]
-    req_format.repeat_cell = RepeatCellRequest(range=gr_range,
                                                cell=gr_cell,
                                                fields=gr_fields)
     print(req_format.model_dump())
