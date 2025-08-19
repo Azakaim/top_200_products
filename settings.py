@@ -17,15 +17,16 @@ class Settings(BaseSettings):
 
     GOOGLE_SPREADSHEET_ID: str = Field("", env="GOOGLE_SPREADSHEET_ID")
     GOOGLE_CLIENT_SECRET: str = Field("", env="GOOGLE_CLIENT_SECRET")
-    GOOGLE_SHEETS_URI : str = Field("", env="GOOGLE_SHEETS_URI")
-    SERVICE_SCOPES : str = Field("", env="SCOPES")
-    PATH_TO_CREDENTIALS : str = Field("", env="PATH_TO_CREDENTIALS")
+    GOOGLE_SHEETS_URI: str = Field("", env="GOOGLE_SHEETS_URI")
+    SERVICE_SCOPES: str = Field("", env="SCOPES")
+    PATH_TO_CREDENTIALS: str = Field("", env="PATH_TO_CREDENTIALS")
 
     OZON_BASE_URL: str = Field("", env="OZON_BASE_URL")
     OZON_NAME_LK: str = Field("", env="OZON_NAME_LK")
     OZON_CLIENT_IDS: str = Field("", env="OZON_CLIENT_IDS")
     OZON_API_KEYS: str = Field("", env="OZON_API_KEYS")
-
+    FBS_POSTINGS_REPORT_URL: str = Field("", env="FBS_POSTINGS_REPORT_URL")
+    FBO_POSTINGS_REPORT_URL: str = Field("", env="FBO_POSTINGS_REPORT_URL")
 
     class Config:
         env = Env()

@@ -6,7 +6,7 @@ from pydantic import BaseModel,  PrivateAttr
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-from src.clients.google_sheets.schemas import SheetsValuesInTo, BatchUpdateFormatBody, Request, SheetsValuesOut
+from src.clients.google_sheets.schemas import SheetsValuesInTo, BatchUpdateFormatBody, SheetsValuesOut
 
 
 class SheetsCli(BaseModel):
@@ -23,12 +23,24 @@ class SheetsCli(BaseModel):
     path_to_credentials: str
     _service: Any = PrivateAttr(default=None)
     _creds: Credentials = PrivateAttr(default=None)
+    _sheet_id: int = PrivateAttr(default=None)
 
     def model_post_init(self, __context):
         # тут создаём сервис после валидации публичных полей
         self._creds = Credentials.from_service_account_file(self.path_to_credentials,
                                                             scopes=self.scopes)
         self._service = build("sheets", "v4", credentials=self._creds)
+
+    async def get_sheet_id_by_title(self, spreadsheet_id: str, title: str) -> int:
+        meta = self._service.spreadsheets().get(
+            spreadsheetId=spreadsheet_id,
+            fields="sheets(properties(sheetId,title))"
+        ).execute()
+        for sh in meta.get("sheets", []):
+            props = sh["properties"]
+            if props.get("title") == title:
+                return props["sheetId"]
+        raise ValueError(f"Лист '{title}' не найден")
 
     async def update_table(self, sheets_values: SheetsValuesInTo):
         """
@@ -69,9 +81,10 @@ class SheetsCli(BaseModel):
 
 
 
-    async def format_table(self, requests: List[Request]):
+    async def update_format(self, request: BatchUpdateFormatBody):
+        format_data = request.model_dump()
         # Форматирование через batchUpdate
         self._service.spreadsheets().batchUpdate(
             spreadsheetId=self.spreadsheet_id,
-            body = BatchUpdateFormatBody(requests=requests)
+            body = format_data
         ).execute()

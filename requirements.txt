@@ -6,3 +6,5 @@ environs==14.3.0
 pydantic_settings==2.10.1
 pandas==2.3.1
 asyncio==4.0.0
+tenacity==9.1.2
+httpx==0.28.1

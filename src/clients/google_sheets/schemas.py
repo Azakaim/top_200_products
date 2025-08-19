@@ -1,5 +1,6 @@
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, AliasChoices, field_validator
+from enum import StrEnum
+from typing import List, Optional, Literal, Final, Tuple, Any
+from pydantic import BaseModel, Field, AliasChoices, field_validator, PrivateAttr
 
 
 class SheetsValues(BaseModel):
@@ -134,35 +135,51 @@ class CellData(BaseModel):
         "populate_by_name": True
     }
 
-FieldPath =(
-    "userEnteredFormat.textFormat.bold",
-    "userEnteredFormat.textFormat.italic",
-    "userEnteredFormat.textFormat.underline",
-    "userEnteredFormat.textFormat.strikethrough",
-    "userEnteredFormat.textFormat.fontFamily",
-    "userEnteredFormat.textFormat.fontSize",
-    "userEnteredFormat.textFormat.foregroundColor",
-    "userEnteredFormat.backgroundColor",
-    "userEnteredFormat.horizontalAlignment",
-    "userEnteredFormat.verticalAlignment",
-    "userEnteredFormat.wrapStrategy",
-)
+class FieldPath(StrEnum):
+    """
+    Тип для полей, которые нужно обновить в RepeatCellRequest.
+    Используется для указания путей к полям в формате Google Sheets API.
+    """
+    BOLD = "userEnteredFormat.textFormat.bold"
+    ITALIC = "userEnteredFormat.textFormat.italic"
+    UNDERLINE = "userEnteredFormat.textFormat.underline"
+    STRIKETHROUGH = "userEnteredFormat.textFormat.strikethrough"
+    FONT_FAMILY = "userEnteredFormat.textFormat.fontFamily"
+    FONT_SIZE = "userEnteredFormat.textFormat.fontSize"
+    FOREGROUND_COLOR = "userEnteredFormat.textFormat.foregroundColor"
+    BACKGROUND_COLOR = "userEnteredFormat.backgroundColor"
+    HORIZONTAL_ALIGNMENT = "userEnteredFormat.horizontalAlignment"
+    VERTICAL_ALIGNMENT = "userEnteredFormat.verticalAlignment"
+    WRAP_STRATEGY = "userEnteredFormat.wrapStrategy"
 
-FilePathLiteral = Literal[*FieldPath]
+# TODO: сделать так, чтобы можно было передавать список полей в RepeatCellRequest
+# FIELD_PATHS: Final[Tuple[str, ...]] = (
+#     "userEnteredFormat.textFormat.bold",
+#     "userEnteredFormat.textFormat.italic",
+#     "userEnteredFormat.textFormat.underline",
+#     "userEnteredFormat.textFormat.strikethrough",
+#     "userEnteredFormat.textFormat.fontFamily",
+#     "userEnteredFormat.textFormat.fontSize",
+#     "userEnteredFormat.textFormat.foregroundColor",
+#     "userEnteredFormat.backgroundColor",
+#     "userEnteredFormat.horizontalAlignment",
+#     "userEnteredFormat.verticalAlignment",
+#     "userEnteredFormat.wrapStrategy",
+# )
+#
+# F= [*FIELD_PATHS]
 
 class RepeatCellRequest(BaseModel):
     range: GridRange
     cell: CellData
-    fields: List[FieldPathLiteral]
+    fields: Any
 
-    @field_validator("fields")
-    @classmethod
-    def _normalize(cls, v: str) -> str:
-        v = ",".join(v) if isinstance(v, list) else v
-        if v not in tuple(FieldPath):
-            raise ValueError(f"ожидали {FieldPath}")
-        return v
-    # например "userEnteredFormat.textFormat.bold, userEnteredFormat.backgroundColor"
+    def model_post_init(self, __context):
+        if not self.fields:
+            raise ValueError("Fields must not be empty. Use FIELD_PATHS to specify the fields to update.")
+        # Преобразуем строки в FieldPath
+        if isinstance(self.fields, list):
+            self.fields = ",".join(self.fields)
 
 # ===== MERGE CELLS =====
 
