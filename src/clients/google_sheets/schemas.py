@@ -1,10 +1,10 @@
 from enum import StrEnum
-from typing import List, Optional, Literal, Final, Tuple, Any
+from typing import List, Optional, Literal, Final, Tuple, Any, Union
 from pydantic import BaseModel, Field, AliasChoices, field_validator, PrivateAttr
 
 
 class SheetsValues(BaseModel):
-    range: str
+    range: str = Field(..., description="The A1 notation of the values to update.")
     values: List[List[str]] = Field(default_factory=list)
 
 class SheetsValuesInTo(SheetsValues):
@@ -235,8 +235,22 @@ class AutoResizeDimensionsRequest(BaseModel):
     dimensions: DimensionRange
 
 # ===== ОБЪЕДИНИТЕЛЬНЫЙ ТИП REQUEST =====
+class Properties(BaseModel):
+    title: Optional[str] = Field(default=None)
 
-class Request(BaseModel):
+class AddSheet(BaseModel):
+    properties: Optional[Properties] = Field(default=None)
+
+class RequestToTable:
+    ...
+
+class BatchUpdateValues(BaseModel):
+    value_input_option: Literal["RAW", "USER_ENTERED"] = Field(default="USER_ENTERED", alias="valueInputOption",
+                                                               validation_alias=AliasChoices("value_input_option",
+                                                                                             "valueInputOption"))
+    data: List[SheetsValuesOut] = Field(default_factory=list)
+
+class BatchUpdateFormat(BaseModel, RequestToTable):
     repeat_cell: Optional[RepeatCellRequest] = Field(default=None,
                                                      alias="repeatCell",
                                                      validation_alias=AliasChoices("repeat_cell",
@@ -251,11 +265,15 @@ class Request(BaseModel):
                                                                           alias="autoResizeDimensions",
                                                                           validation_alias=AliasChoices("auto_resize_dimensions",
                                                                                                         "autoResizeDimensions"))
+    add_sheet: Optional[AddSheet] = Field(default=None,
+                                          alias="addSheet",
+                                          validation_alias=AliasChoices("add_sheet",
+                                                                        "addSheet"))
 
     model_config = {
         "populate_by_name": True,
         "extra": "forbid"  # чтоб не проскочило лишнего forbid --> строго следить за полями
     }
 
-class BatchUpdateFormatBody(BaseModel):
-    requests: List[Request]
+class Body(BaseModel):
+    requests: List[Union[BatchUpdateFormat, BatchUpdateValues]] = Field(default_factory=list)

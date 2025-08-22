@@ -1,7 +1,7 @@
 import asyncio
 from typing import Dict, Optional, Any, ClassVar
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 from pydantic.json_schema import model_json_schema
 
 from settings import proj_settings
@@ -38,7 +38,6 @@ class OzonClient(BaseModel):
         StatusDelivery.DRIVER_PICKUP.value,
         StatusDelivery.DELIVERED.value,
         StatusDelivery.NOT_ACCEPTED.value,
-        # StatusDelivery.SENT_BY_SELLER.value
     ]
 
     @property
@@ -57,7 +56,6 @@ class OzonClient(BaseModel):
                 }
         self._client.headers.update(self._headers)
 
-
     def model_post_init(self, __context):
         self._fbs_reports_url = proj_settings.FBS_POSTINGS_REPORT_URL
         self._fbo_reports_url = proj_settings.FBO_POSTINGS_REPORT_URL
@@ -69,7 +67,7 @@ class OzonClient(BaseModel):
             headers={},
         )
         self._default_limiter = RateLimiter(self.default_rps, 1.0)
-        # инициализируем лимитеры для каждого эндпоинта
+        # инициализируем лимитеры для каждого эндпоинта #TODO: убрать, если не нужен лимиттер для каждого эндпоинта
         # if self._per_endpoint_rps:
         #     for ep, rps in self._per_endpoint_rps.items():
         #         self._limiters[ep] = RateLimiter(rps, 1.0)
@@ -79,7 +77,8 @@ class OzonClient(BaseModel):
         return self._limiters.get(endpoint, self._default_limiter)
 
     async def request(self, method: str, endpoint: str, *, json: Optional[dict] = None) -> Any:
-        # limiter = await self._limiter_for(endpoint) # получаем лимитер для данного эндпоинта
+        # limiter = await self._limiter_for(endpoint) # получаем лимитер для данного эндпоинта #TODO: убрать, если не нужно
+        # если лимитер не задан, используем дефолтный
         await self._default_limiter.acquire()
         await self._sem.acquire()
         try:
@@ -127,45 +126,72 @@ class OzonClient(BaseModel):
     #         for i in range(len(client_ids)) if client_ids[i] and api_keys[i] and names[i]
     #     ]
 
-    async def get_fbs_report(self, since: str, to: str, *, limit: int = 1000):
+
+    async def generate_reports(self, delivery_way: str, since: str, to: str, *, limit: int = 1000):
         """
         Получает отчет FBS с Ozon API.
 
+        :param delivery_way:
         :param since: Start date in ISO 8601 format (e.g., "2025-10-01T00:00:00Z").
         :param to: End date in ISO 8601 format (e.g., "2025-10-01T00:00:00Z").
         :param limit: Number of records to fetch.
         :param offset: Offset for pagination.
         :return: JSON response from the Ozon API.
         """
+        if delivery_way == "FBS":
+            url = self._fbs_reports_url
+        else:
+            url = self._fbo_reports_url
         offset = 0
         while True:
-            # body = {"dir": "asc", "filter": {"since": since, "to": to}, "limit": limit, "offset": offset}
             status_delivery = self.STATUS_DELIVERY
             filter_req = Filter(status_alias=status_delivery, since=since, to=to)
             body_req = PostingRequestSchema(dir="asc", filter=filter_req, limit=limit, offset=offset)
             # Выполняем запрос к Ozon API
-            data = await self.request("POST", self._fbs_reports_url,
+            data = await self.request("POST", url,
                                       json=body_req.model_dump(by_alias=True, exclude_none=True))
             result = data.get("result", {})
-            postings = result.get("postings", []) or []
+
+            if delivery_way == "FBS":
+                postings = result.get("postings", []) or []
+            else:
+                postings = result
+
             if not postings:
                 break
-            yield postings
-            if not result.get("has_next"):
-                break
+            parsed_postings = await self._parse_posting(postings)
+            yield parsed_postings
+            # для FBO
+            if isinstance(result, list):
+                if len(result) < limit:
+                    break
+            else:
+                if not result.get("has_next"):
+                    break
             offset += len(postings)
+    #
+    # async def _validate_posting(self, posting: list):
+    #     return [PostingRequestSchema.model_validate(posting) for posting in posting]
 
-    async def get_fbo_report(self, since: str, to: str, limit: int = 1000, offset: int = 0):
-        """
-        Получает отчет FBO с Ozon API.
 
-        :param since: Start date in ISO 8601 format (e.g., "2025-10-01T00:00:00Z").
-        :param to: End date in ISO 8601 format (e.g., "2025-10-01T00:00:00Z").
-        :param limit: Number of records to fetch.
-        :param offset: Offset for pagination.
-        :return: JSON response from the Ozon API.
+    async def _parse_posting(self, postings: list) -> list:
         """
-        pass
+        Преобразует данные о доставке в нужный формат.
+
+        :param postings: Список данных о доставке.
+        :return: Список преобразованных данных.
+        """
+        parsed_postings = []
+
+        for posting in postings:
+            status = posting.get("status")
+            products = posting.get("products", []) or []
+            if products:
+                # Преобразуем каждый продукт доставки в нужный формат
+                chunks = [{prod.get("sku"): [prod.get("name"), prod.get("price"), status, prod.get("quantity")]} for prod in products]
+                parsed_postings.extend(chunks) # добавляем преобразованные продукты в общий список
+        return parsed_postings
+
 
     async def aclose(self):
         await self._client.aclose()
