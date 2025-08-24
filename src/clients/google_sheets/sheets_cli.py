@@ -121,7 +121,7 @@ from typing import Any, List
 from pydantic import BaseModel,  PrivateAttr
 
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
+from googleapiclient.discovery import build, Resource
 
 from src.clients.google_sheets.schemas import SheetsValuesInTo, Body, SheetsValuesOut, BatchUpdateFormat, \
     Properties, AddSheet, BatchUpdateValues
@@ -137,6 +137,7 @@ class SheetsCli(BaseModel):
     """
     spreadsheet_id: str
     scopes: list[str]
+
     path_to_credentials: str
     _service: Any = PrivateAttr(default=None)
     _creds: Credentials = PrivateAttr(default=None)
@@ -163,7 +164,7 @@ class SheetsCli(BaseModel):
         data = body.model_dump(exclude_none=True)
         await self.__move_batch(body=data)
 
-    async def __get_sheets(self) -> dict[str, str]:
+    async def get_sheets_info(self) -> dict[str, str]:
         """
         Method to get all sheet titles in the spreadsheet
 
@@ -183,7 +184,7 @@ class SheetsCli(BaseModel):
         :param title: str - title of the sheet to check
         :return: bool - True if the sheet exists, False otherwise
         """
-        meta = await self.__get_sheets()
+        meta = await self.get_sheets_info()
         # Проверяем, есть ли лист с таким названием
         if title in meta:
             return True, meta[title]
@@ -207,8 +208,8 @@ class SheetsCli(BaseModel):
         #         "data": [sheets_values.model_dump(by_alias=True, exclude_unset=True)],
         #     },
         # ).execute()
-        data = sheets_values.model_dump(by_alias=True, exclude_none=True) #[{"range": "Лист1!A2:C2", "values": [["1", "=A2*10", "ХАХАХААХ"]]}]
-        await self.__move_batch(body=data)
+        data = sheets_values.model_dump(by_alias=True, exclude_none=True)
+        await self.__move_batch(body_values=data)
 
     async def read_table(self, range_table: List[str] | str) -> List[SheetsValuesOut]:
         """
@@ -274,5 +275,6 @@ class SheetsCli(BaseModel):
             response = self._service.spreadsheets().values().batchGet(
                 spreadsheetId=self.spreadsheet_id,
                 ranges=_range,
+                majorDimension="COLUMNS"
             ).execute()
         return response

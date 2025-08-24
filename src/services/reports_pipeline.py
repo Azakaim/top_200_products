@@ -15,6 +15,7 @@ class PipelineContext(BaseModel):
     DELIVERY_WAY_FBO: str = "FBO"
     ozon_client: OzonClient
     sheets_cli: SheetsCli
+    values_range: List[List[str]]
     postings: dict = {}
     account_id: int
     account_name: str
@@ -34,23 +35,16 @@ async def check_date_update(since: str, to: str) -> bool:
     ...
 
 async def push_to_sheets(context: PipelineContext ) -> None:
+
     range_table_read_date = []
-    list_name = list(context.postings.keys())[0].split('_')[0] # Получаем нейм кабинета
+    sheet_name = list(context.postings.keys())[0].split('_')[0] # Получаем нейм кабинета
 
-    # Проверяем, существует ли лист с таким названием
-    flag, sheet_id = await context.sheets_cli.check_sheet_exists(title=list_name)
 
-    if not flag:
-        # Добавляем новый лист в таблицу
-        await context.sheets_cli.add_list(title=list_name)
-        print(f"Добавлен новый лист: {list_name}")
-
-    print(f"ID листа 'Лист1': {sheet_id}")
     # Читаем последнюю дату обновления
-    last_updating_date = await context.sheets_cli.read_table(range_table=context.range_last_updating_date)
+    sheet_values = await get_sheet_values(context, sheet_name)
     val = [["--ИНФО--","--ДАТА--"] for _ in range(5)]
-    sh_value = SheetsValuesOut(range=f"{list_name}!A1:B5", values=val)
-    body_value = BatchUpdateValues(value_input_option="USER_ENTERED",data=[sh_value.model_dump()])
+    d_fill_out = SheetsValuesOut(range=f"{sheet_name}!A1:B5", values=val)
+    body_value = BatchUpdateValues(value_input_option="USER_ENTERED",data=[d_fill_out.model_dump()])
     # Записываем данные в таблицу
     await context.sheets_cli.update_table(sheets_values=body_value)
     # Форматируем ячейки
@@ -109,7 +103,21 @@ async def get_reports(reports: list, gen):
     async for row in gen:
         reports.extend(row)
 
-async def precheck_table():
+async def get_sheet_values(context: PipelineContext, sheet_name: str) -> List[List[str]]:
+    """
+    Fetch the last updating date from the specified Google Sheets range.
+    :param context: PipelineContext containing necessary parameters.
+    :param sheet_name: Name of the sheet to read from.
+    :return: List[str].
+    """
+    range_sheet = sheet_name
+    last_updating_date = await context.sheets_cli.read_table(range_table=range_sheet)
+    return [v for v in last_updating_date[0].values] # Возвращаем только значения
+
+async def get_updating_date(context: PipelineContext) -> str:
+    ...
+
+async def populate_table():
     """
     Pre-checks the Google Sheets table to ensure it is ready for data insertion.
 

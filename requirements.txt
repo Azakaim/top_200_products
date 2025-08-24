@@ -9,3 +9,6 @@ pandas-stubs==2.3.0.250703 # для поддержки pandas в Pydantic
 asyncio==4.0.0
 tenacity==9.1.2
 httpx==0.28.1
+
+python-dateutil==2.9.0.post0
+pydantic-settings==2.10.1
