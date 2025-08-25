@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     OZON_NAME_LK: str = Field("", env="OZON_NAME_LK")
     OZON_CLIENT_IDS: str = Field("", env="OZON_CLIENT_IDS")
     OZON_API_KEYS: str = Field("", env="OZON_API_KEYS")
+    OZON_REMAIN_URL: str = Field("", env="OZON_REMAIN_URL")
     FBS_POSTINGS_REPORT_URL: str = Field("", env="FBS_POSTINGS_REPORT_URL")
     FBO_POSTINGS_REPORT_URL: str = Field("", env="FBO_POSTINGS_REPORT_URL")
     DATE_SINCE: str = Field("", env="DATE_SINCE")

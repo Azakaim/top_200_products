@@ -162,7 +162,7 @@ class SheetsCli(BaseModel):
         req = BatchUpdateFormat(addSheet=add_sheet)
         body = Body(requests=[req])
         data = body.model_dump(exclude_none=True)
-        await self.__move_batch(body=data)
+        await self.__move_batch(body_format=data)
 
     async def get_sheets_info(self) -> dict[str, str]:
         """
@@ -225,7 +225,7 @@ class SheetsCli(BaseModel):
 
     async def update_format(self, request: Body):
         format_data = request.model_dump()
-        await self.__move_batch(body=format_data)
+        await self.__move_batch(body_format=format_data)
 
     async def check_date_last_updating(self)  -> str:
         """
@@ -245,7 +245,7 @@ class SheetsCli(BaseModel):
         :return: None
         """
         # Проверяем, что не указаны одновременно fields и range_table и body не пустой
-        if (bool(fields) == bool(range_table)) and not body_values:
+        if (bool(fields) == bool(range_table)) and not body_values and not body_format:
             raise ValueError("Cannot specify both 'fields' and 'range_table' parameters at the same time and "
                              "'body' must not be empty.")
         response = {}

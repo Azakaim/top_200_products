@@ -1,23 +1,22 @@
 import asyncio
 from typing import Dict, Optional, Any, ClassVar
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
-from pydantic.json_schema import model_json_schema
+from pydantic import BaseModel, PrivateAttr
 
-from settings import proj_settings
-from src.clients.ozon.schemas import SellerAccount, OzonAPIError, PostingRequestSchema, Filter, StatusDelivery
+from src.clients.ozon.schemas import OzonAPIError, PostingRequestSchema, Filter, StatusDelivery, Remainder
 from src.utils.limiter import RateLimiter, parse_retry_after_seconds
 
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential_jitter, stop_after_attempt
 import httpx
 
 class OzonClient(BaseModel):
-    seller_account: SellerAccount = Field(default=None, description="Seller account for Ozon API")
+    # seller_account: SellerAccount = Field(default=None, description="Seller account for Ozon API")
     concurrency: int = 45 # количество параллельных запросов
     default_rps: int = 45 # дефолтный лимит на аккаунт
-    _base_url: str = PrivateAttr()
-    _fbs_reports_url: str = PrivateAttr()
-    _fbo_reports_url: str = PrivateAttr()
+    base_url: str
+    fbs_reports_url: str
+    fbo_reports_url: str
+    remain_url: str
     _headers: Dict[str, str] = PrivateAttr(default_factory=dict)
     _sem: asyncio.Semaphore = PrivateAttr(default=None) # семафор для ограничения параллельных запросов
     _limiters: Dict[str, RateLimiter] = PrivateAttr({}) # словарь лимитеров для каждого эндпоинта
@@ -57,12 +56,9 @@ class OzonClient(BaseModel):
         self._client.headers.update(self._headers)
 
     def model_post_init(self, __context):
-        self._fbs_reports_url = proj_settings.FBS_POSTINGS_REPORT_URL
-        self._fbo_reports_url = proj_settings.FBO_POSTINGS_REPORT_URL
-        self._base_url = proj_settings.OZON_BASE_URL
         self._sem = asyncio.Semaphore(self.concurrency)
         self._client = httpx.AsyncClient(
-            base_url=self._base_url, timeout=self._timeout,
+            base_url=self.base_url, timeout=self._timeout,
             limits=httpx.Limits(max_keepalive_connections=100, max_connections=100),
             headers={},
         )
@@ -126,6 +122,17 @@ class OzonClient(BaseModel):
     #         for i in range(len(client_ids)) if client_ids[i] and api_keys[i] and names[i]
     #     ]
 
+    async def fetch_remainders(self, skus: list[str]):
+        remainders = None
+        payload = {
+            "skus": skus
+        }
+        req = await self.request("POST",
+                                  self.remain_url,
+                                  json=payload)
+        if req:
+            return [Remainder(**r) for r in req["items"]]
+        return []
 
     async def generate_reports(self, delivery_way: str, since: str, to: str, *, limit: int = 1000):
         """
@@ -139,9 +146,9 @@ class OzonClient(BaseModel):
         :return: JSON response from the Ozon API.
         """
         if delivery_way == "FBS":
-            url = self._fbs_reports_url
+            url = self.fbs_reports_url
         else:
-            url = self._fbo_reports_url
+            url = self.fbo_reports_url
         offset = 0
         while True:
             status_delivery = self.STATUS_DELIVERY
@@ -188,7 +195,7 @@ class OzonClient(BaseModel):
             products = posting.get("products", []) or []
             if products:
                 # Преобразуем каждый продукт доставки в нужный формат
-                chunks = [{prod.get("sku"): [prod.get("name"), prod.get("price"), status, prod.get("quantity")]} for prod in products]
+                chunks = [{str(prod.get("sku")): [prod.get("name"), prod.get("price"), status, str(prod.get("quantity"))]} for prod in products]
                 parsed_postings.extend(chunks) # добавляем преобразованные продукты в общий список
         return parsed_postings
 

@@ -1,28 +1,32 @@
 import asyncio
-from datetime import datetime
-from typing import AsyncGenerator
 import logging
 
-from dateutil.utils import today
-from pandas.core.construction import extract_array
-
-from settings import proj_settings
-from src.clients.google_sheets.schemas import SheetsValuesInTo, RequestToTable, RepeatCellRequest, GridRange, CellData, \
-    TextFormat, CellFormat, FieldPath, Body, Color
-from src.clients.google_sheets.sheets_cli import SheetsCli
-from src.clients.ozon.ozon_cli import OzonClient
-from src.clients.ozon.schemas import extracted_sellers, OzonAPIError
-import pandas as pd
-import numpy as np
-
-from dateutil import parser
-
-from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from google.oauth2.service_account import Credentials
 
-from src.services.reports_pipeline import push_to_sheets, PipelineContext
+from settings import proj_settings
+from src.clients.google_sheets.sheets_cli import SheetsCli
+from src.clients.ozon.ozon_cli import OzonClient
+from src.clients.ozon.schemas import OzonAPIError, SellerAccount
+from src.services.reports_pipeline import push_to_sheets, PipelineContext, fetch_postings, check_date_update, \
+    get_remainders
 
+
+def extract_sellers() -> list[SellerAccount]:
+    """
+    Extracts sellers from the environment variables.
+    """
+    client_ids = proj_settings.OZON_CLIENT_IDS.split(',')
+    api_keys = proj_settings.OZON_API_KEYS.split(',')
+    names = proj_settings.OZON_NAME_LK.split(',')
+
+    if len(client_ids) != len(api_keys) != len(names):
+        raise ValueError("Client IDs, API keys, and names must have the same length.")
+
+    return [
+        SellerAccount(api_key=api_keys[i], name=names[i], client_id=client_ids[i])
+        for i in range(len(client_ids)) if client_ids[i] and api_keys[i] and names[i]
+    ]
 
 async def main() -> None:
     # Инициализация клиента Google Sheets
@@ -36,109 +40,52 @@ async def main() -> None:
     creds = Credentials.from_service_account_file(path_to_credentials,
                                                    scopes=scopes)
     creds.refresh(Request())
-    # Строим клиент для Drive Activity API
-    activity_service = build("driveactivity", "v2", credentials=creds)
-
-
-    # Делаем запрос activity:query
-    resp = activity_service.activity().query(body={
-        # "itemName": "items/{}".format(spreadsheet_id), # это ID Google Sheets
-        "pageSize": 3,  #  дает возможность получить только одну запись активности
-        # "filter": "detail.action_detail_case:CREATE"  # фильтр для получения только создания файла
-        "ancestorName": "items/{}".format(spreadsheet_id)  # можно использовать для получения активности по папке
-        # "filter": "detail.action_detail_case:EDIT"  # фильтр для получения только редактирования файла
-        # "filter": "detail.action_detail_case:DELETE"  # фильтр для получения только удаления файла
-    }).execute()
-
-    print(resp)
 
     # Инициализация клиента Ozon API
-    ozon_client = OzonClient()
-    delivery_method_fbo = "FBO"
-    delivery_method_fbs = "FBS"
+    fbs_reports_url = proj_settings.FBS_POSTINGS_REPORT_URL
+    fbo_reports_url = proj_settings.FBO_POSTINGS_REPORT_URL
+    base_url = proj_settings.OZON_BASE_URL
+    remain_url = proj_settings.OZON_REMAIN_URL
+    ozon_client = OzonClient(
+        fbs_reports_url=fbs_reports_url,
+        fbo_reports_url=fbo_reports_url,
+        base_url=base_url,
+        remain_url=remain_url
+    )
 
+    # Инициализация логгера
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     log = logging.getLogger("ozon")
 
-    async def get_reports(reports: list, gen):
-        async for row in gen:
-            reports.extend(row)
-    dict_ = {}
-    for s in dict_:
-        name, id_ = s, dict_[s]
     # получаем данные из Google Sheets
     existed_sheets = await sheets_cli.get_sheets_info()
     sheets_names = list(existed_sheets.keys())
-    sheets_ids = {existed_sheets[name]: name for name in existed_sheets}
-
     extracted_dates = await sheets_cli.read_table(range_table=sheets_names)
-
-
-
-    # Информация о продавце и методе доставки
-    acc_name = " "
-
-    postings = {}
+    extracted_sellers = extract_sellers()
 
     try:
         for acc in extracted_sellers:
-            ozon_client.headers = {"client_id":acc.client_id, "api_key": acc.api_key}
-
-            print(f"Обработка аккаунта: {acc.name} (ID: {acc.client_id})")
-            acc_method_fbs = f"{acc_name}_{delivery_method_fbs}"
-            acc_method_fbo = f"{acc_name}_{delivery_method_fbo}"
-            acc_method_fbs = acc_method_fbs.replace(" ", acc.name)
-            acc_method_fbo = acc_method_fbo.replace(" ", acc.name)
-            postings[acc_method_fbs] = []
-            postings[acc_method_fbo] = []
-
-            # Получаем отчеты
-            tasks = [
-                # Получаем отчеты FBS
-                get_reports(reports=postings[acc_method_fbs],
-                            gen=ozon_client.generate_reports(delivery_way=delivery_method_fbs,
-                                                             since=proj_settings.DATE_SINCE,
-                                                             to=proj_settings.DATE_TO)),
-                # Получаем отчеты FBO
-                get_reports(reports=postings[acc_method_fbo],
-                            gen=ozon_client.generate_reports(delivery_way=delivery_method_fbo,
-                                                             since=proj_settings.DATE_SINCE,
-                                                             to=proj_settings.DATE_TO))
-            ]
-            await asyncio.gather(*tasks)
-
             # Проверяем, существует ли лист с таким названием
-            flag, sheet_id = await sheets_cli.check_sheet_exists(title=acc.name)
-            sheet_values_acc = None
-            last_updating_date = None
-            if not flag:
-                # Добавляем новый лист в таблицу
-                await sheets_cli.add_list(title=acc.name)
-                # Получаем ID нового листа
-                sheet_id = await sheets_cli.check_sheet_exists(title=acc.name)
-                print(f"Добавлен новый лист: {acc.name}")
-            else:
-                # берем значения из таблицы в соответствии с именем листа и кабинета
-                sheet_values_acc = next((n.values for n in extracted_dates if acc.name in n.range), None)
-
-                # проверяем дату последнего обновления
-                updating_dates = next((e for e in sheet_values_acc if "Дата обновления" in e),None)
-                if updating_dates:
-                    last_updating_date = updating_dates[1]  # берем последнюю дату обновления
-                    print(f"Последняя дата обновления для {acc.name}: {last_updating_date}")
-            if last_updating_date:
-                lud_date_format = parser.parse(last_updating_date).date() # datetime.strptime(last_updating_date, "%Y-%m-%d").date()
-                today_date = datetime.today().date()
-                if lud_date_format == today_date:
-                    print(f"Данные для {acc.name} уже обновлены сегодня ({today_date}). Пропускаем обновление.")
-                    continue
-            print(f"ID листа 'Лист1': {sheet_id}")
+            # Добавляем новый лист в таблицу
+            # Получаем ID нового листа
+            # Берем значения из таблицы в соответствии с именем листа и кабинета
+            # Проверяем, существует ли лист с таким названием
+            sheet_id = {acc.name: ""}
+            if acc.name in existed_sheets:
+                sheet_id ={acc.name: existed_sheets[acc.name]}
+            is_today_updating, sheet_values_acc = await check_date_update(acc.name,
+                                                        sheets_cli=sheets_cli,
+                                                        extracted_dates=extracted_dates,
+                                                        sheet_id=sheet_id)
+            # Если сегодня, то не обновляем таблицу
+            if is_today_updating:
+                continue
 
             pipline_context = PipelineContext(
                 ozon_client=ozon_client,
                 sheets_cli=sheets_cli,
                 values_range=sheet_values_acc,
-                postings=postings,
+                #postings=postings,
                 account_name=acc.name,
                 account_id=acc.client_id,
                 account_api_key=acc.api_key,
@@ -147,20 +94,14 @@ async def main() -> None:
                 range_last_updating_date=range_updating_date,
 
             )
-            await push_to_sheets(context=pipline_context)
+            # получаем данные с кабинета Озон
+            postings = await fetch_postings(pipline_context)
+            await push_to_sheets(context=pipline_context, postings=postings)
 
-            # Здесь можно обработать postings, например, сохранить в Google Sheets
-
-        for acc, posting in postings.items():
-            log.info(f"Отчет для {acc}: {len(posting)} записей")
     except OzonAPIError as e:
         print(f"Ошибка при обращении к Ozon API: {e.status} {e.endpoint} - {e.body}")
     finally:
         await ozon_client.aclose()  # Закрываем соединение с Ozon API
-
-    # df = pd.read_excel("/home/user/UralServiceRegion/top_products_month/FBO 07_29_2025.xlsx")
-    # headers = list(df.columns)
-    # print(f"Заголовки столбцов: {headers}")
 
 
 if __name__ == '__main__':

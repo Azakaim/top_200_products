@@ -1,8 +1,6 @@
 from enum import StrEnum
 from typing import List, Optional
 
-from settings import proj_settings
-
 from pydantic import BaseModel,  Field
 
 
@@ -21,6 +19,36 @@ class StatusDelivery (StrEnum):
     NOT_ACCEPTED = "not_accepted" # не принят на сортировочном центре
     # SENT_BY_SELLER = "sent_by_seller" # отправлено продавцом
 
+class Remainder(BaseModel):
+    ads: float = Field(...)
+    ads_cluster: float = Field(...)
+    available_stock_count: int = Field(...)
+    cluster_id: int = Field(...)
+    cluster_name: str = Field(...)
+    days_without_sales: int = Field(...)
+    days_without_sales_cluster: int = Field(...)
+    excess_stock_count: int = Field(...)
+    expiring_stock_count: int = Field(...)
+    idc: int = Field(...)
+    idc_cluster: int = Field(...)
+    item_tags: List[str] = Field(...)
+    name: str = Field(...)
+    offer_id: str = Field(...)
+    other_stock_count: int = Field(...)
+    requested_stock_count: int = Field(...)
+    return_from_customer_stock_count: int = Field(...)
+    return_to_seller_stock_count: int = Field(...)
+    sku: int = Field(...)
+    stock_defect_stock_count: int = Field(...)
+    transit_defect_stock_count: int = Field(...)
+    transit_stock_count: int = Field(...)
+    turnover_grade: str = Field(...)
+    turnover_grade_cluster: str = Field(...)
+    valid_stock_count: int = Field(...)
+    waiting_docs_stock_count: int = Field(...)
+    warehouse_id: int = Field(...)
+    warehouse_name: str = Field(...)
+
 class SellerAccount(BaseModel):
     """
     Ozon_cli API settings.
@@ -28,22 +56,6 @@ class SellerAccount(BaseModel):
     api_key: str = Field(..., description="API key for Ozon API")
     name: str = Field(..., description="Name of the seller in Ozon")
     client_id: str = Field(..., description="Client ID for Ozon API")
-
-def extract_sellers() -> list[SellerAccount]:
-    """
-    Extracts sellers from the environment variables.
-    """
-    client_ids = proj_settings.OZON_CLIENT_IDS.split(',')
-    api_keys = proj_settings.OZON_API_KEYS.split(',')
-    names = proj_settings.OZON_NAME_LK.split(',')
-
-    if len(client_ids) != len(api_keys) != len(names):
-        raise ValueError("Client IDs, API keys, and names must have the same length.")
-
-    return [
-        SellerAccount(api_key=api_keys[i], name=names[i], client_id=client_ids[i])
-        for i in range(len(client_ids)) if client_ids[i] and api_keys[i] and names[i]
-    ]
 
 class LastChangedStatusDate(BaseModel):
     date_from: str = Field(default="", alias="from", description="Start date for the last changed status, in ISO 8601 format")
@@ -299,5 +311,3 @@ class OzonAPIError(RuntimeError):
         self.status = status
         self.endpoint = endpoint
         self.body = body
-
-extracted_sellers = extract_sellers()  # Expose the function for external use
