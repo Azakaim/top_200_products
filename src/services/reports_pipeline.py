@@ -3,7 +3,10 @@ from copy import deepcopy
 from datetime import datetime
 from itertools import chain
 from typing import List, Tuple
+from wsgiref import headers
 
+from pandas.core.dtypes.cast import can_hold_element
+from pandas.io.formats.format import return_docstring
 from pydantic import BaseModel
 
 from src.clients.google_sheets.schemas import SheetsValuesInTo, BatchUpdateFormat, GridRange, Color, TextFormat, \
@@ -48,7 +51,7 @@ async def _is_today_updating_date(updating_dates: List[str]) -> bool:
                 except (ValueError, OverflowError, TypeError) as e:
                     continue
             # проверяем если дат больше одной была ошибка заполнения
-            if len(uniq_dates) > 1:
+            if len(uniq_dates) > 1 or len(uniq_dates) == 0:
                 return False
             last_updating_date = updating_dates[1]  # берем последнюю дату обновления
         if last_updating_date:
@@ -95,25 +98,57 @@ async def check_date_update(acc_name:str,
     print(f"ID листа 'Лист1': {sheet_id}")
     return False, []
 
-async def _collect_values_range_by_model(context: PipelineContext,
-                                         model_name: str,
-                                         model_posting: dict,
-                                         remainders: list[Remainder] = None,
-                                         is_title_create: bool = False) -> List[str]:
+async def collect_header(*, header_fbs: List[str], header_fbo: List[str]) -> List[str]:
+    h_fbs = list(chain(*header_fbs))
+    h_fbo = list(chain(*header_fbo))
+    header = h_fbs[:6] + h_fbo + h_fbs[6:]
+    return header
+
+async def collect_values_range_by_model(context: PipelineContext,
+                                        model_name: str,
+                                        model_posting: dict,
+                                        clusters_quantity: int = 0,
+                                        remainders: list[Remainder] = None,
+                                        is_title_create: bool = False) -> tuple:
     values_range_by_model = []
+    title = []
+    values = []
+    clusters_count = 0
+    skus = [next(iter(d.keys()), 0) for d in model_posting]
     try:
         for ind, v in enumerate(model_posting):
-            if ind == 0 and is_title_create:
+            if (ind == 0 and is_title_create) and model_name == "FBS":
                 # имена столбцов
-                values_range_by_model.append(context.TITLE_SHEETS)
-            # работа с остатками
-            if remainders:
-                remainder_info = [r.cluster_name for r in remainders if str(r.sku) in list(v.keys())]  + [r.available_stock_count for r in remainders if str(r.sku) in list(v.keys())]
+                title.append(context.TITLE_SHEETS)
+            # работа с остатками FBO
+            if model_name == "FBO":
+                if ind == 0 and is_title_create:
+                    # добавляем заголовки
+                    clusters_info = list(set([r.cluster_name for r in remainders if str(r.sku) in skus]))
+                    title.append(clusters_info)
+                    # добавляем количество кластеров для FBS
+                    clusters_count = len(clusters_info)
+
+
+                remainders_count = [str(r.available_stock_count) for r in remainders if str(r.sku) in list(v.keys())]
+                missing_length = clusters_count - len(remainders_count)
+                if missing_length > 0:
+                    data_stub = ["" for _ in range(missing_length)]
+                    remainders_count += data_stub
+                else:
+                    test = ""
                 # расплющиваем в одномерный массив наш список
-                values = [model_name] +  list(v.keys()) + remainder_info + list(chain.from_iterable(v.values()))
+                values = ([model_name]
+                          + list(v.keys())
+                          + list(chain.from_iterable(v.values()))
+                          + remainders_count)
+
+            # работа с массивами FBS
             else:
-                # расплющиваем в одномерный массив наш список
-                values = [model_name] +  list(v.keys()) + list(chain.from_iterable(v.values()))
+                data_stub = ["" for _ in range(clusters_quantity)]
+                # расплющиваем в одномерный массив наш список и добавляем заглушку
+                # для ненужных данных по остаткам в кластерах
+                values = [model_name] +  list(v.keys()) + list(chain.from_iterable(v.values())) + data_stub
             # добавляем остальные данные
             values.extend([context.since, context.to, datetime.now().strftime('%Y-%m-%dT%H:%M')])
             # t = list(chain.from_iterable(val if isinstance(val, list) else [val] for val in values))
@@ -121,7 +156,7 @@ async def _collect_values_range_by_model(context: PipelineContext,
                 values_range_by_model.append(values)
     except (ValueError, OverflowError, TypeError) as e:
         return e
-    return values_range_by_model
+    return values_range_by_model , title, clusters_count
 
 async def create_values_range(context: PipelineContext, postings: dict) -> List[List[str]]:
     fbs_postings = next((val for key, val in postings.items() if "FBS" in key),None)
@@ -129,9 +164,20 @@ async def create_values_range(context: PipelineContext, postings: dict) -> List[
     remainders = await get_remainders(context=context, postings=fbo_postings)
 
     values_range = []
-    task = [ _collect_values_range_by_model(context,"FBS", fbs_postings, is_title_create=True),
-             _collect_values_range_by_model(context, "FBO", fbo_postings, remainders=remainders),]
-    fbs_res, fbo_res = await asyncio.gather(*task, return_exceptions=True)
+
+    fbo_res, header_fbo, clusters_quantity = await collect_values_range_by_model(context, "FBO",
+                                          fbo_postings,
+                                          remainders=remainders,
+                                          is_title_create=True)
+    fbs_res, header_fbs, _ = await collect_values_range_by_model(context, "FBS",
+                                          fbs_postings,
+                                          clusters_quantity=clusters_quantity,
+                                          is_title_create=True)
+
+    header_sh = await collect_header(header_fbs=header_fbs,header_fbo=header_fbo)
+    # добавляем созданные заголовки для таблицы
+    values_range.append(header_sh)
+
     values_range.extend(fbs_res)
     values_range.extend(fbo_res)
     return values_range
