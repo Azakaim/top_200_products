@@ -28,6 +28,13 @@ def extract_sellers() -> list[SellerAccount]:
         for i in range(len(client_ids)) if client_ids[i] and api_keys[i] and names[i]
     ]
 
+async def save_context(context: PipelineContext):
+    try:
+        res = await fetch_postings(context)
+    except Exception as e:
+        return context, e
+    return context, res
+
 async def main() -> None:
     # Инициализация клиента Google Sheets
     scopes = proj_settings.SERVICE_SCOPES.split(',')
@@ -46,13 +53,6 @@ async def main() -> None:
     fbo_reports_url = proj_settings.FBO_POSTINGS_REPORT_URL
     base_url = proj_settings.OZON_BASE_URL
     remain_url = proj_settings.OZON_REMAIN_URL
-    ozon_client = OzonClient(
-        fbs_reports_url=fbs_reports_url,
-        fbo_reports_url=fbo_reports_url,
-        base_url=base_url,
-        remain_url=remain_url
-    )
-
     # Инициализация логгера
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     log = logging.getLogger("ozon")
@@ -62,9 +62,21 @@ async def main() -> None:
     sheets_names = list(existed_sheets.keys())
     extracted_dates = await sheets_cli.read_table(range_table=sheets_names)
     extracted_sellers = extract_sellers()
-
+    pipline_contexts = []
+    postings_by_accounts = []
     try:
         for acc in extracted_sellers:
+            # для каждого клиента TODO: подумать как лучше оптимизировать
+            ozon_client = OzonClient(
+                fbs_reports_url=fbs_reports_url,
+                fbo_reports_url=fbo_reports_url,
+                base_url=base_url,
+                remain_url=remain_url)
+            ozon_client.headers = {
+                "client_id": acc.client_id,
+                "api_key": acc.api_key,
+                "content_type": "application/json"
+            }
             # Проверяем, существует ли лист с таким названием
             # Добавляем новый лист в таблицу
             # Получаем ID нового листа
@@ -94,14 +106,29 @@ async def main() -> None:
                 range_last_updating_date=range_updating_date,
 
             )
-            # получаем данные с кабинета Озон
-            postings = await fetch_postings(pipline_context)
-            await push_to_sheets(context=pipline_context, postings=postings)
+            pipline_contexts.append(pipline_context)
+            # postings_by_accounts.append((pipline_contexts,fetch_postings(pipline_context)))
+        tasks = [asyncio.create_task(save_context(ctx)) for ctx in pipline_contexts]
+        result = await asyncio.gather(*tasks)
+
+        fbo_postings = [
+            (ctx, next((v for k, v in post.items() if "FBO" in k),None))
+            for ctx, post in result
+            ]
+
+        # получаем остатки с кабинета Озон
+        remainders = await asyncio.gather(*(get_remainders(context=context, postings=postings) for context, postings in fbo_postings))
+
+        # закрываем клиентов
+        await asyncio.gather(*(context.ozon_client.aclose() for context, _ in result))
+
+        for context_postings in result:
+            cntxt = context_postings[0]
+            postings_acc = context_postings[1]
+            await push_to_sheets(context=cntxt, postings=postings_acc)
 
     except OzonAPIError as e:
         print(f"Ошибка при обращении к Ozon API: {e.status} {e.endpoint} - {e.body}")
-    finally:
-        await ozon_client.aclose()  # Закрываем соединение с Ozon API
 
 
 if __name__ == '__main__':

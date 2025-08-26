@@ -178,21 +178,23 @@ async def sorted_by_column_name(columns_names: List[str], remains: List[dict]):
         remains.pop(count)
     return sorted_postings
 
-async def create_values_range(context: PipelineContext, postings: dict) -> List[List[str]]:
+async def create_values_range(context: PipelineContext, postings: dict, remainders: List[Remainder]) -> List[List[str]]:
     fbs_postings = next((val for key, val in postings.items() if "FBS" in key),None)
     fbo_postings = next((val for key, val in postings.items() if "FBO" in key),None)
-    remainders = await get_remainders(context=context, postings=fbo_postings)
-
     values_range = []
+    header_fbo = []
+    clusters_quantity = 0
+    fbo_res = []
+    if fbo_postings:
+        fbo_res, header_fbo, clusters_quantity = await collect_values_range_by_model(context, "FBO",
+                                                                                     fbo_postings,
+                                                                                     remainders=remainders,
+                                                                                     is_title_create=True)
 
-    fbo_res, header_fbo, clusters_quantity = await collect_values_range_by_model(context, "FBO",
-                                          fbo_postings,
-                                          remainders=remainders,
-                                          is_title_create=True)
     fbs_res, header_fbs, _ = await collect_values_range_by_model(context, "FBS",
-                                          fbs_postings,
-                                          clusters_quantity=clusters_quantity,
-                                          is_title_create=True)
+                                                                 fbs_postings,
+                                                                 clusters_quantity=clusters_quantity,
+                                                                 is_title_create=True)
 
     header_sh = await collect_header(header_fbs=header_fbs,header_fbo=header_fbo)
     # добавляем созданные заголовки для таблицы
@@ -202,8 +204,8 @@ async def create_values_range(context: PipelineContext, postings: dict) -> List[
     values_range.extend(fbo_res)
     return values_range
 
-async def push_to_sheets(context: PipelineContext, postings: dict) -> None:
-    val = await create_values_range(context, postings)
+async def push_to_sheets(context: PipelineContext, postings: dict, remainders: List[Remainder]) -> None:
+    val = await create_values_range(context, postings, remainders)
     data = SheetsValuesOut(range=context.account_name, values=val)
     body_value = BatchUpdateValues(value_input_option="USER_ENTERED",data=[data.model_dump()])
     # Записываем данные в таблицу
@@ -217,7 +219,6 @@ async def fetch_postings(context: PipelineContext):
     :param context: PipelineContext containing necessary parameters.
     :return: List of postings.
     """
-    context.ozon_client.headers = {"client_id": context.account_id, "api_key": context.account_api_key}
     postings = {}
     print(f"Обработка аккаунта: {context.account_name} (ID: {context.account_id})")
     acc_method_fbs = f"{context.account_name}_{context.DELIVERY_WAY_FBS}"

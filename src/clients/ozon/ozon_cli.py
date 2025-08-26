@@ -47,13 +47,11 @@ class OzonClient(BaseModel):
     def headers(self, value):
         if not isinstance(value, dict):
             raise ValueError("Headers must be a dictionary")
-        if isinstance(value, dict):
-            self._headers={
-                    "Client-Id": value.get("client_id"),
-                    "Api-Key": value.get("api_key"),
-                    "Content-Type": "application/json",
-                }
-        self._client.headers.update(self._headers)
+        self._headers={
+                "Client-Id": value.get("client_id"),
+                "Api-Key": value.get("api_key"),
+                "Content-Type": "application/json",
+            }
 
     def model_post_init(self, __context):
         self._sem = asyncio.Semaphore(self.concurrency)
@@ -85,7 +83,7 @@ class OzonClient(BaseModel):
                 reraise=True,
             ):
                 with attempt:
-                    resp = await self._client.request(method, endpoint, json=json)
+                    resp = await self._client.request(method, endpoint, json=json, headers=self._headers)
                     # 2xx — ок
                     if 200 <= resp.status_code < 300:
                         return resp.json()
