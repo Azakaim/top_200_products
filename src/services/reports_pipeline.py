@@ -112,9 +112,10 @@ async def collect_values_range_by_model(context: PipelineContext,
                                         is_title_create: bool = False) -> tuple:
     values_range_by_model = []
     title = []
-    values = []
+    clusters_info = []
     clusters_count = 0
     skus = [next(iter(d.keys()), 0) for d in model_posting]
+    sorted_remainders_by_column_name = []
     try:
         for ind, v in enumerate(model_posting):
             if (ind == 0 and is_title_create) and model_name == "FBS":
@@ -124,24 +125,30 @@ async def collect_values_range_by_model(context: PipelineContext,
             if model_name == "FBO":
                 if ind == 0 and is_title_create:
                     # добавляем заголовки
-                    clusters_info = list(set([r.cluster_name for r in remainders if str(r.sku) in skus]))
+                    clusters_info = list(set([r.cluster_name for r in remainders if (str(r.sku) in skus) and (r.cluster_name != "")]))
+                    cl_i = [r for r in remainders if (str(r.sku) in skus) and (r.cluster_name == "")]
                     title.append(clusters_info)
                     # добавляем количество кластеров для FBS
                     clusters_count = len(clusters_info)
 
-
-                remainders_count = [str(r.available_stock_count) for r in remainders if str(r.sku) in list(v.keys())]
+                remainders_count = [{r.cluster_name: str(r.available_stock_count)} for r in remainders if str(r.sku) in list(v.keys())]
+                cr = next((r for r in remainders if str(r.sku) in list(v.keys())),0)
                 missing_length = clusters_count - len(remainders_count)
                 if missing_length > 0:
-                    data_stub = ["" for _ in range(missing_length)]
+                    # каким складам не хватает данных
+                    w = [next(iter(k.keys()),0) for k in remainders_count]
+                    missing_warehouse = list(set(clusters_info) - set(w))
+                    data_stub = [{_: ""} for _ in missing_warehouse]
                     remainders_count += data_stub
+                    sorted_remainders_by_column_name = await sorted_by_column_name(clusters_info, remainders_count)
+
                 else:
                     test = ""
                 # расплющиваем в одномерный массив наш список
                 values = ([model_name]
                           + list(v.keys())
                           + list(chain.from_iterable(v.values()))
-                          + remainders_count)
+                          + sorted_remainders_by_column_name)
 
             # работа с массивами FBS
             else:
@@ -157,6 +164,19 @@ async def collect_values_range_by_model(context: PipelineContext,
     except (ValueError, OverflowError, TypeError) as e:
         return e
     return values_range_by_model , title, clusters_count
+
+async def sorted_by_column_name(columns_names: List[str], remains: List[dict]):
+    sorted_postings = []
+    count = 0
+    for cn in columns_names:
+        for ind, p in enumerate(remains):
+            if cn in list(p.keys()):
+                count = ind
+                sorted_postings.append(p[cn])
+                break
+        # удаляем записанное значение
+        remains.pop(count)
+    return sorted_postings
 
 async def create_values_range(context: PipelineContext, postings: dict) -> List[List[str]]:
     fbs_postings = next((val for key, val in postings.items() if "FBS" in key),None)
