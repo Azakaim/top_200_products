@@ -109,99 +109,6 @@ class PostingRequestSchema(BaseModel):
         "populate_by_name": True
     }
 
-# {
-#   "result": {
-#     "postings": [
-#       {
-#         "posting_number": "05708065-0029-1",
-#         "order_id": 680420041,
-#         "order_number": "05708065-0029",
-#         "pickup_code_verified_at": "2025-01-17T10:59:26.614Z",
-#         "status": "awaiting_deliver",
-#         "substatus": "posting_awaiting_passport_data",
-#         "delivery_method": {
-#           "id": 21321684811000,
-#           "name": "Ozon Логистика самостоятельно, Красногорск",
-#           "warehouse_id": 21321684811000,
-#           "warehouse": "Стим Тойс Нахабино",
-#           "tpl_provider_id": 24,
-#           "tpl_provider": "Ozon Логистика"
-#         },
-#         "tracking_number": "",
-#         "tpl_integration_type": "ozon",
-#         "in_process_at": "2022-05-13T07:07:32Z",
-#         "shipment_date": "2022-05-13T10:00:00Z",
-#         "delivering_date": null,
-#         "optional": {
-#           "products_with_possible_mandatory_mark": [
-#             0
-#           ]
-#         },
-#         "cancellation": {
-#           "cancel_reason_id": 0,
-#           "cancel_reason": "",
-#           "cancellation_type": "",
-#           "cancelled_after_ship": false,
-#           "affect_cancellation_rating": false,
-#           "cancellation_initiator": ""
-#         },
-#         "customer": null,
-#         "products": [
-#           {
-#             "price": "1390.000000",
-#             "currency_code": "RUB",
-#             "is_blr_traceable": true,
-#             "is_marketplace_buyout": true,
-#             "offer_id": "205953",
-#             "name": " Электронный конструктор PinLab Позитроник",
-#             "sku": 358924380,
-#             "quantity": 1
-#           }
-#         ],
-#         "addressee": null,
-#         "barcodes": null,
-#         "analytics_data": null,
-#         "financial_data": null,
-#         "is_express": false,
-#         "legal_info": {
-#           "company_name": "string",
-#           "inn": "string",
-#           "kpp": "string"
-#         },
-#         "quantum_id": 0,
-#         "requirements": {
-#           "products_requiring_change_country": [],
-#           "products_requiring_rnpt": []
-#           "products_requiring_gtd": [],
-#           "products_requiring_country": [],
-#           "products_requiring_mandatory_mark": [],
-#           "products_requiring_jwn": []
-#         },
-#         "tariffication": [
-#           {
-#             "current_tariff_rate": 0,
-#             "current_tariff_type": "",
-#             "current_tariff_charge": "",
-#             "current_tariff_charge_currency_code": "",
-#             "next_tariff_rate": 0,
-#             "next_tariff_type": "",
-#             "next_tariff_charge": "",
-#             "next_tariff_starts_at": "2023-11-13T08:05:57.657Z",
-#             "next_tariff_charge_currency_code": ""
-#           }
-#         ]
-#       }
-#     ],
-#     "has_next": true
-#   }
-# }
-
-# "optional": {
-#           "products_with_possible_mandatory_mark": [
-#             0
-#           ]
-
-
 class OzOptional(BaseModel):
     """
     Optional fields related to the posting.
@@ -239,7 +146,7 @@ class Product(BaseModel):
     currency_code: str = Field(..., description="Currency code for the price")
     is_blr_traceable: bool = Field(..., description="Indicates if the product is traceable by Belarusian law")
     is_marketplace_buyout: bool = Field(..., description="Indicates if the product is a marketplace buyout")
-    offer_id: str = Field(..., description="Offer ID for the product")
+    offer_id: str = Field(..., description="Offer ID for the product") # артикул
     name: str = Field(..., description="Name of the product")
     sku: int = Field(..., description="SKU (Stock Keeping Unit) of the product")
     quantity: int = Field(..., description="Quantity of the product in the posting")

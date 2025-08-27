@@ -3,3 +3,6 @@
 __pycache__/
 .env
 service_account.json
+.venv
+*json
+*test*

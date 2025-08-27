@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     DATE_SINCE: str = Field("", env="DATE_SINCE")
     DATE_TO: str = Field("", env="DATE_TO")
 
+    HOST_1C: str = Field("", env="HOST_1C")
+    AUTH_LOGIN_1C: str = Field("", env="AUTH_LOGIN_1C")
+    AUTH_PASS_1C: str = Field("", env="AUTH_PASS_1C")
+
     class Config:
         env = Env()
         load_dotenv()

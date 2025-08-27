@@ -1,6 +1,7 @@
 import asyncio
 from typing import Dict, Optional, Any, ClassVar
 
+from more_itertools import chunked
 from pydantic import BaseModel, PrivateAttr
 
 from src.clients.ozon.schemas import OzonAPIError, PostingRequestSchema, Filter, StatusDelivery, Remainder
@@ -121,16 +122,21 @@ class OzonClient(BaseModel):
     #     ]
 
     async def fetch_remainders(self, skus: list[str]):
-        remainders = None
-        payload = {
-            "skus": skus
-        }
-        req = await self.request("POST",
-                                  self.remain_url,
-                                  json=payload)
-        if req:
-            return [Remainder(**r) for r in req["items"]]
-        return []
+        bodies = []
+        # соблюдаем ограничение озона
+        for batch in chunked(skus, 100):
+            bodies.append(batch)
+        remainders = []
+        for skus in bodies:
+            payload = {
+                "skus": skus
+            }
+            req = await self.request("POST",
+                                      self.remain_url,
+                                      json=payload)
+            if req:
+                remainders.extend([Remainder(**r) for r in req["items"]])
+        return remainders
 
     async def generate_reports(self, delivery_way: str, since: str, to: str, *, limit: int = 1000):
         """
