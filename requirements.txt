@@ -1,3 +1,4 @@
+more-itertools
 pydantic==2.11.7
 protobuf==6.32.0
 google-api-python-client==2.179.0

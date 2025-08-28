@@ -10,8 +10,7 @@ from src.utils.limiter import RateLimiter, parse_retry_after_seconds
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential_jitter, stop_after_attempt
 import httpx
 
-class OzonCli(BaseModel):
-    # seller_account: SellerAccount = Field(default=None, description="Seller account for Ozon API")
+class OzonClient(BaseModel):
     concurrency: int = 45 # количество параллельных запросов
     default_rps: int = 45 # дефолтный лимит на аккаунт
     base_url: str
@@ -39,20 +38,6 @@ class OzonCli(BaseModel):
         StatusDelivery.DELIVERED.value,
         StatusDelivery.NOT_ACCEPTED.value,
     ]
-
-    @property
-    def headers(self):
-        return self._headers
-
-    @headers.setter
-    def headers(self, value):
-        if not isinstance(value, dict):
-            raise ValueError("Headers must be a dictionary")
-        self._headers={
-                "Client-Id": value.get("client_id"),
-                "Api-Key": value.get("api_key"),
-                "Content-Type": "application/json",
-            }
 
     def model_post_init(self, __context):
         self._sem = asyncio.Semaphore(self.concurrency)
@@ -146,7 +131,6 @@ class OzonCli(BaseModel):
         :param since: Start date in ISO 8601 format (e.g., "2025-10-01T00:00:00Z").
         :param to: End date in ISO 8601 format (e.g., "2025-10-01T00:00:00Z").
         :param limit: Number of records to fetch.
-        :param offset: Offset for pagination.
         :return: JSON response from the Ozon API.
         """
         if delivery_way == "FBS":
@@ -170,8 +154,7 @@ class OzonCli(BaseModel):
 
             if not postings:
                 break
-            parsed_postings = await self._parse_posting(postings)
-            yield parsed_postings
+            yield postings
             # для FBO
             if isinstance(result, list):
                 if len(result) < limit:
@@ -180,27 +163,6 @@ class OzonCli(BaseModel):
                 if not result.get("has_next"):
                     break
             offset += len(postings)
-    #
-    # async def _validate_posting(self, posting: list):
-    #     return [PostingRequestSchema.model_validate(posting) for posting in posting]
-
-    async def _parse_posting(self, postings: list[dict]) -> list:
-        """
-        Преобразует данные о доставке в нужный формат.
-
-        :param postings: Список данных о доставке.
-        :return: Список преобразованных данных.
-        """
-        parsed_postings = []
-
-        for posting in postings:
-            status = posting.get("status")
-            products = posting.get("products", []) or []
-            if products:
-                # Преобразуем каждый продукт доставки в нужный формат
-                chunks = [{str(prod.get("sku")): [prod.get("name"), prod.get("price"), status, str(prod.get("quantity"))]} for prod in products]
-                parsed_postings.extend(chunks) # добавляем преобразованные продукты в общий список
-        return parsed_postings
 
     async def aclose(self):
         await self._client.aclose()

@@ -9,7 +9,7 @@ from src.clients.google_sheets.schemas import SheetsValuesInTo, BatchUpdateForma
     CellFormat, \
     CellData, FieldPath, RepeatCellRequest, Body, BatchUpdateValues, SheetsValuesOut
 from src.clients.google_sheets.sheets_cli import SheetsCli
-from src.clients.ozon.ozon_cli import OzonClient
+from src.clients.ozon.ozon_cli import OzonCli
 
 from dateutil import parser
 
@@ -21,7 +21,7 @@ class PipelineContext(BaseModel):
     DELIVERY_WAY_FBO: str = "FBO"
     sheet_titles: List[str] = None
     clusters_names: List[str] = None
-    ozon_client: OzonClient
+    ozon_client: OzonCli
     sheets_cli: SheetsCli
     values_range: List[List[str]]
     account_id: str
@@ -31,7 +31,56 @@ class PipelineContext(BaseModel):
     to: str
     range_last_updating_date: str
 
-async def _is_today_updating_date(updating_dates: List[str]) -> bool:
+
+# service Ozon
+async def fetch_postings(context: PipelineContext):
+    """
+    Fetch postings from Ozon API based on delivery way and date range.
+
+    :param context: PipelineContext containing necessary parameters.
+    :return: List of postings.
+    """
+    postings = {}
+    print(f"Обработка аккаунта: {context.account_name} (ID: {context.account_id})")
+    acc_method_fbs = f"{context.account_name}_{context.DELIVERY_WAY_FBS}"
+    acc_method_fbo = f"{context.account_name}_{context.DELIVERY_WAY_FBO}"
+    postings[acc_method_fbs] = []
+    postings[acc_method_fbo] = []
+
+    # Получаем отчеты
+    tasks = [
+        # Получаем отчеты FBS
+        get_reports(reports=postings[acc_method_fbs],
+                    gen=context.ozon_client.generate_reports(delivery_way=context.DELIVERY_WAY_FBS,
+                                                     since=context.since,
+                                                     to=context.to)),
+        # Получаем отчеты FBO
+        get_reports(reports=postings[acc_method_fbo],
+                    gen=context.ozon_client.generate_reports(delivery_way=context.DELIVERY_WAY_FBO,
+                                                     since=context.since,
+                                                     to=context.to))
+    ]
+    await asyncio.gather(*tasks)
+    return postings
+
+# service Ozon
+async def get_reports(reports: list, gen):
+    async for row in gen:
+        reports.extend(row)
+
+# Service Ozon
+async def get_remainders(context: PipelineContext,postings: list) -> List[Remainder]:
+    skus = []
+    for s in postings:
+        skus.append(next((k for k, v in s.items()), None))
+    sorted_skus = list(set(skus))
+    remainders = await context.ozon_client.fetch_remainders(sorted_skus)
+    if remainders:
+        return remainders
+    return []
+
+#service sheets
+async def is_today_updating_date(updating_dates: List[str]) -> bool:
     last_updating_date = None
     dates = list(set(updating_dates)) if updating_dates else None
     uniq_dates = []
@@ -47,7 +96,7 @@ async def _is_today_updating_date(updating_dates: List[str]) -> bool:
                 except (ValueError, OverflowError, TypeError) as e:
                     continue
             # проверяем если дат больше одной была ошибка заполнения
-            if len(uniq_dates) > 1 or len(uniq_dates) == 0:
+            if (len(uniq_dates) > 1) or (len(uniq_dates) == 0):
                 return False
             last_updating_date = updating_dates[1]  # берем последнюю дату обновления
         if last_updating_date:
@@ -60,6 +109,7 @@ async def _is_today_updating_date(updating_dates: List[str]) -> bool:
 
     return False
 
+# service sheets
 async def check_date_update(acc_name:str,
                             *,
                             sheets_cli: SheetsCli,
@@ -80,7 +130,6 @@ async def check_date_update(acc_name:str,
         await sheets_cli.add_list(title=acc_name)
         # Получаем ID нового листа
         sheet_id[acc_name] = (await sheets_cli.check_sheet_exists(title=acc_name))[1]
-        print(f"Добавлен новый лист: {acc_name}")
         # Берем значения из таблицы в соответствии с именем листа и кабинета
         sheet_values_acc = next((n.values for n in extracted_dates if acc_name in n.range), None)
     else:
@@ -89,11 +138,11 @@ async def check_date_update(acc_name:str,
 
         # проверяем дату последнего обновления если она сегодня, то пропускаем обновление
         updating_dates = next((e for e in sheet_values_acc if "Дата обновления" in e), None)
-        if await _is_today_updating_date(updating_dates):
+        if await is_today_updating_date(updating_dates):
             return True, sheet_values_acc
-    print(f"ID листа 'Лист1': {sheet_id}")
-    return False, []
+    return False, sheet_values_acc
 
+# mappers
 async def collect_values_range_by_model(context: PipelineContext,
                                         model_name: str,
                                         model_posting: dict,
@@ -132,6 +181,7 @@ async def collect_values_range_by_model(context: PipelineContext,
         return e
     return values_range_by_model
 
+# mappers
 async def merge_stock_by_cluster(remains: list[dict]):
     clusters = {}
     for r in remains:
@@ -139,6 +189,7 @@ async def merge_stock_by_cluster(remains: list[dict]):
             clusters[key] = str(int(clusters.get(key, 0)) + int(value))
     return clusters
 
+# mappers
 async def prepare_warehouse_stubs(remainders: dict,clusters_info: list):
     clusters_count = len(clusters_info)
     missing_length = clusters_count - len(remainders)
@@ -150,6 +201,7 @@ async def prepare_warehouse_stubs(remainders: dict,clusters_info: list):
         remainders.update(data_stub)
     return remainders
 
+# mappers
 async def sort_remains_by_cluster_name(columns_names: List[str], remains: dict):
     sorted_postings = []
     key_remove = None
@@ -166,6 +218,7 @@ async def sort_remains_by_cluster_name(columns_names: List[str], remains: dict):
         remains.pop(key_remove)
     return sorted_postings
 
+# mappers
 async def create_values_range(context: PipelineContext, postings: dict, remainders: List[Remainder]) -> List[List[str]]:
     fbs_postings = next((val for key, val in postings.items() if "FBS" in key),None)
     fbo_postings = next((val for key, val in postings.items() if "FBO" in key),None)
@@ -188,6 +241,7 @@ async def create_values_range(context: PipelineContext, postings: dict, remainde
     values_range.extend(fbo_res)
     return values_range
 
+# mappers
 async def push_to_sheets(context: PipelineContext, postings: dict, remainders: List[Remainder]) -> None:
     val = await create_values_range(context, postings, remainders)
     data = SheetsValuesOut(range=context.account_name, values=val)
@@ -196,40 +250,7 @@ async def push_to_sheets(context: PipelineContext, postings: dict, remainders: L
     await context.sheets_cli.update_table(sheets_values=body_value)
     # форматируем таблицу
 
-async def fetch_postings(context: PipelineContext):
-    """
-    Fetch postings from Ozon API based on delivery way and date range.
-
-    :param context: PipelineContext containing necessary parameters.
-    :return: List of postings.
-    """
-    postings = {}
-    print(f"Обработка аккаунта: {context.account_name} (ID: {context.account_id})")
-    acc_method_fbs = f"{context.account_name}_{context.DELIVERY_WAY_FBS}"
-    acc_method_fbo = f"{context.account_name}_{context.DELIVERY_WAY_FBO}"
-    postings[acc_method_fbs] = []
-    postings[acc_method_fbo] = []
-
-    # Получаем отчеты
-    tasks = [
-        # Получаем отчеты FBS
-        get_reports(reports=postings[acc_method_fbs],
-                    gen=context.ozon_client.generate_reports(delivery_way=context.DELIVERY_WAY_FBS,
-                                                     since=context.since,
-                                                     to=context.to)),
-        # Получаем отчеты FBO
-        get_reports(reports=postings[acc_method_fbo],
-                    gen=context.ozon_client.generate_reports(delivery_way=context.DELIVERY_WAY_FBO,
-                                                     since=context.since,
-                                                     to=context.to))
-    ]
-    await asyncio.gather(*tasks)
-    return postings
-
-async def get_reports(reports: list, gen):
-    async for row in gen:
-        reports.extend(row)
-
+# mappers
 async def get_sheet_values(context: PipelineContext, sheet_name: str) -> List[List[str]]:
     """
     Fetch the last updating date from the specified Google Sheets range.
@@ -240,17 +261,7 @@ async def get_sheet_values(context: PipelineContext, sheet_name: str) -> List[Li
     range_sheet = sheet_name
     last_updating_date = await context.sheets_cli.read_table(range_table=range_sheet)
     return [v for v in last_updating_date[0].values] # Возвращаем только значения
-
-async def get_remainders(context: PipelineContext,postings: list) -> List[Remainder]:
-    skus = []
-    for s in postings:
-        skus.append(next((k for k, v in s.items()), None))
-    sorted_skus = list(set(skus))
-    remainders = await context.ozon_client.fetch_remainders(sorted_skus)
-    if remainders:
-        return remainders
-    return []
-
+# Service sheets
 async def format_table():
     """
     Pre-checks the Google Sheets table to ensure it is ready for data insertion.

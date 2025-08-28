@@ -8,7 +8,7 @@ from google.oauth2.service_account import Credentials
 
 from settings import proj_settings
 from src.clients.google_sheets.sheets_cli import SheetsCli
-from src.clients.ozon.ozon_cli import OzonClient
+from src.clients.ozon.ozon_cli import OzonCli
 from src.clients.ozon.schemas import OzonAPIError, SellerAccount, Remainder
 from src.services.reports_pipeline import push_to_sheets, PipelineContext, fetch_postings, check_date_update, \
     get_remainders
@@ -93,7 +93,7 @@ async def main() -> None:
     try:
         for acc in extracted_sellers:
             # для каждого клиента TODO: подумать как лучше оптимизировать
-            ozon_client = OzonClient(
+            ozon_client = OzonCli(
                 fbs_reports_url=fbs_reports_url,
                 fbo_reports_url=fbo_reports_url,
                 base_url=base_url,
@@ -111,7 +111,7 @@ async def main() -> None:
             sheet_id = {acc.name: ""}
             if acc.name in existed_sheets:
                 sheet_id ={acc.name: existed_sheets[acc.name]}
-            is_today_updating, sheet_values_acc = await check_date_update(acc.name,
+            is_today_updating, account_table_data = await check_date_update(acc.name,
                                                         sheets_cli=sheets_cli,
                                                         extracted_dates=extracted_dates,
                                                         sheet_id=sheet_id)
@@ -122,7 +122,7 @@ async def main() -> None:
             pipline_context = PipelineContext(
                 ozon_client=ozon_client,
                 sheets_cli=sheets_cli,
-                values_range=sheet_values_acc,
+                values_range=account_table_data,
                 #postings=postings,
                 account_name=acc.name,
                 account_id=acc.client_id,

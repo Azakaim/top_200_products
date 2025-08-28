@@ -177,6 +177,7 @@ class SheetsCli(BaseModel):
             return {sh["properties"]["title"]:sh["properties"]["sheetId"] for sh in sheets}
         return {}
 
+    # service sheets
     async def check_sheet_exists(self, title: str) -> tuple[bool, str | None]:
         """
         Method to check if a sheet with the given title exists in the spreadsheet
@@ -197,17 +198,6 @@ class SheetsCli(BaseModel):
         :param sheets_values: SheetsValues
         :return: None
         """
-        # self._service.spreadsheets().values().batchUpdate(
-        #     spreadsheetId=self.spreadsheet_id,
-        #     # body={
-        #     #     "valueInputOption": "USER_ENTERED",
-        #     #     "data": [{"range": "Лист1!A2:C2", "values": [["1", "=A2*10", "ХАХАХААХ"]]}],
-        #     # },
-        #     body={
-        #         "valueInputOption": "USER_ENTERED",
-        #         "data": [sheets_values.model_dump(by_alias=True, exclude_unset=True)],
-        #     },
-        # ).execute()
         data = sheets_values.model_dump(by_alias=True, exclude_none=True)
         await self.__move_batch(body_values=data)
 
@@ -226,14 +216,6 @@ class SheetsCli(BaseModel):
     async def update_format(self, request: Body):
         format_data = request.model_dump()
         await self.__move_batch(body_format=format_data)
-
-    async def check_date_last_updating(self)  -> str:
-        """
-        Method to check the last update date of the spreadsheet
-
-        :return: str - last update date in ISO format
-        """
-        ...
 
     async def __move_batch(self,*,
                            range_table: List[str]=None,
