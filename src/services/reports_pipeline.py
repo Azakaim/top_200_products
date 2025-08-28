@@ -1,12 +1,8 @@
 import asyncio
-from copy import deepcopy
 from datetime import datetime
 from itertools import chain
 from typing import List, Tuple
-from wsgiref import headers
 
-from pandas.core.dtypes.cast import can_hold_element
-from pandas.io.formats.format import return_docstring
 from pydantic import BaseModel
 
 from src.clients.google_sheets.schemas import SheetsValuesInTo, BatchUpdateFormat, GridRange, Color, TextFormat, \
@@ -37,14 +33,15 @@ class PipelineContext(BaseModel):
 
 async def _is_today_updating_date(updating_dates: List[str]) -> bool:
     last_updating_date = None
+    dates = list(set(updating_dates)) if updating_dates else None
     uniq_dates = []
-    # проверяем дату последнего обновления если она сегодня, то пропускаем обновление
+    # проверяем дату последнего обновления е)сли она сегодня, то пропускаем обновление
     # в случае ошибки парсинга даты возвращаем False и перезаполняем таблицу
     try:
-        if updating_dates:
-            for s in updating_dates:
+        if dates:
+            for s in dates:
                 try:
-                    parsed_date = parser.parse(s)
+                    parsed_date = parser.parse(s).strftime("%Y-%m-%d")
                     if parsed_date not in uniq_dates:
                         uniq_dates.append(parsed_date)
                 except (ValueError, OverflowError, TypeError) as e:
@@ -97,12 +94,6 @@ async def check_date_update(acc_name:str,
     print(f"ID листа 'Лист1': {sheet_id}")
     return False, []
 
-async def collect_header(*, header_fbs: List[str], header_fbo: List[str]) -> List[str]:
-    h_fbs = list(chain(*header_fbs))
-    h_fbo = list(chain(*header_fbo))
-    header = h_fbs[:6] + h_fbo + h_fbs[6:]
-    return header
-
 async def collect_values_range_by_model(context: PipelineContext,
                                         model_name: str,
                                         model_posting: dict,
@@ -113,10 +104,15 @@ async def collect_values_range_by_model(context: PipelineContext,
         for ind, v in enumerate(model_posting):
             # работа с остатками FBO
             if model_name == "FBO":
-                remainders_count = [{r.cluster_name: str(r.available_stock_count)} for r in remainders if str(r.sku) in list(v.keys())]
-                prepared_remainders = await prepare_warehouse_stubs(remainders_count, clusters_names)
+                # получаем список диктов потому что могут быть одинаковые значения ключа
+                remainders_count = [{r.cluster_name: str(r.available_stock_count)}
+                                    for r in remainders if (str(r.sku) in list(v.keys())) and (r.cluster_name != "")]
+                # склеиваем остатки по имени склада
+                glued_remains = await merge_stock_by_cluster(remainders_count)
+                # делаем заглушки для складов где товар не продается для корректного пуша в гугл таблицы
+                prepared_remainders = await prepare_warehouse_stubs(glued_remains, clusters_names)
                 print(prepared_remainders)
-                sorted_remainders_by_column_name = await sorted_by_column_name(clusters_names, prepared_remainders)
+                sorted_remainders_by_column_name = await sort_remains_by_cluster_name(clusters_names, prepared_remainders)
                 # расплющиваем в одномерный массив наш список
                 values = ([model_name]
                           + list(v.keys())
@@ -136,28 +132,38 @@ async def collect_values_range_by_model(context: PipelineContext,
         return e
     return values_range_by_model
 
-async def prepare_warehouse_stubs(remainders: list[dict],clusters_info: list):
+async def merge_stock_by_cluster(remains: list[dict]):
+    clusters = {}
+    for r in remains:
+        for key, value in r.items():
+            clusters[key] = str(int(clusters.get(key, 0)) + int(value))
+    return clusters
+
+async def prepare_warehouse_stubs(remainders: dict,clusters_info: list):
     clusters_count = len(clusters_info)
     missing_length = clusters_count - len(remainders)
     if missing_length > 0:
         # каким складам не хватает данных
-        w = [next(iter(k.keys()), 0) for k in remainders]
-        missing_warehouse = list(set(clusters_info) - set(w))
-        data_stub = [{_: ""} for _ in missing_warehouse]
-        remainders += data_stub
+        warehouse_count = list(remainders.keys()) # делаем это потому что объект -- dict_list а не list
+        missing_warehouse = list(set(clusters_info) - set(warehouse_count))
+        data_stub = { _: "" for _ in missing_warehouse}
+        remainders.update(data_stub)
     return remainders
 
-async def sorted_by_column_name(columns_names: List[str], remains: List[dict]):
+async def sort_remains_by_cluster_name(columns_names: List[str], remains: dict):
     sorted_postings = []
-    count = 0
+    key_remove = None
+    if len(remains) != len(columns_names):
+        #raise Exception(f"{remains}: магазины полный список --> {columns_names}")
+        print(f"{remains}: магазины полный список --> {columns_names}")
     for cn in columns_names:
-        for ind, p in enumerate(remains):
-            if cn in list(p.keys()):
-                count = ind
-                sorted_postings.append(p[cn])
+        for cluster_name in remains:
+            if cn in cluster_name:
+                key_remove = cluster_name
+                sorted_postings.append(remains[cn])
                 break
         # удаляем записанное значение
-        remains.pop(count)
+        remains.pop(key_remove)
     return sorted_postings
 
 async def create_values_range(context: PipelineContext, postings: dict, remainders: List[Remainder]) -> List[List[str]]:
