@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     GOOGLE_SPREADSHEET_ID: str = Field("", env="GOOGLE_SPREADSHEET_ID")
     GOOGLE_CLIENT_SECRET: str = Field("", env="GOOGLE_CLIENT_SECRET")
     GOOGLE_SHEETS_URI: str = Field("", env="GOOGLE_SHEETS_URI")
-    GOOGLE_SHEETS_DATE_UPDATING_RANGE: str = Field("", env="GOOGLE_SHEETS_DATE_UPDATE_RANGE")
     SERVICE_SCOPES: str = Field("", env="SCOPES")
     PATH_TO_CREDENTIALS: str = Field("", env="PATH_TO_CREDENTIALS")
 
@@ -26,9 +25,10 @@ class Settings(BaseSettings):
     OZON_NAME_LK: str = Field("", env="OZON_NAME_LK")
     OZON_CLIENT_IDS: str = Field("", env="OZON_CLIENT_IDS")
     OZON_API_KEYS: str = Field("", env="OZON_API_KEYS")
-    OZON_REMAIN_URL: str = Field("", env="OZON_REMAIN_URL")
-    FBS_POSTINGS_REPORT_URL: str = Field("", env="FBS_POSTINGS_REPORT_URL")
-    FBO_POSTINGS_REPORT_URL: str = Field("", env="FBO_POSTINGS_REPORT_URL")
+    OZON_REMAINS_URL: str = Field("", env="OZON_REMAINS_URL")
+    OZON_SKUS: str = Field("", env="OZON_SKUS")
+    OZON_FBS_POSTINGS_REPORT_URL: str = Field("", env="OZON_FBS_POSTINGS_REPORT_URL")
+    OZON_FBO_POSTINGS_REPORT_URL: str = Field("", env="OZON_FBO_POSTINGS_REPORT_URL")
     DATE_SINCE: str = Field("", env="DATE_SINCE")
     DATE_TO: str = Field("", env="DATE_TO")
 

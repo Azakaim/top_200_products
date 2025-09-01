@@ -191,13 +191,17 @@ class SheetsCli(BaseModel):
             return True, meta[title]
         return False, None
 
-    async def update_table(self, sheets_values: BatchUpdateValues):
+    async def update_table(self, sheets_values: BatchUpdateValues, range_table: str=""):
         """
         Method to update the table
 
         :param sheets_values: SheetsValues
+        :param range_table: str - name of the sheet to update
         :return: None
         """
+        # очистка перед записью TODO: !!! Внимание мы чистим лист пред записью
+        await self.__move_batch(range_table=range_table,clear=True)
+
         data = sheets_values.model_dump(by_alias=True, exclude_none=True)
         await self.__move_batch(body_values=data)
 
@@ -218,25 +222,28 @@ class SheetsCli(BaseModel):
         await self.__move_batch(body_format=format_data)
 
     async def __move_batch(self,*,
-                           range_table: List[str]=None,
+                           range_table: List[str] | str= None,
                            body_values: dict=None,
                            body_format: dict=None,
-                           fields="") -> dict:
+                           fields="",
+                           clear=False) -> dict:
         """ Method to perform batch update
         :param body: dict - body of the batch update request
         :return: None
         """
         # Проверяем, что не указаны одновременно fields и range_table и body не пустой
-        if (bool(fields) == bool(range_table)) and not body_values and not body_format:
+        if (bool(fields) == bool(range_table)) and not body_values and not body_format and clear is False:
             raise ValueError("Cannot specify both 'fields' and 'range_table' parameters at the same time and "
                              "'body' must not be empty.")
         response = {}
+
         # Если body не пустой, то выполняем batchUpdate значений таблицы
         if body_values:
             response = self._service.spreadsheets().values().batchUpdate(
                 spreadsheetId=self.spreadsheet_id,
                 body=body_values,
             ).execute()
+        # Форматирование таблицы
         if body_format:
             response = self._service.spreadsheets().batchUpdate(
                 spreadsheetId=self.spreadsheet_id,
@@ -250,13 +257,16 @@ class SheetsCli(BaseModel):
             ).execute()
         # Чтение значений из диапазона
         if range_table:
-            if isinstance(range_table, str):
-                _range = [range_table]
-            else:
                 _range = range_table
-            response = self._service.spreadsheets().values().batchGet(
-                spreadsheetId=self.spreadsheet_id,
-                ranges=_range,
-                majorDimension="COLUMNS"
-            ).execute()
+                 # очистить страницу
+                if clear:
+                    return self._service.spreadsheets().values().clear(
+                        spreadsheetId=self.spreadsheet_id,
+                        range=_range,
+                    ).execute()
+                response = self._service.spreadsheets().values().batchGet(
+                    spreadsheetId=self.spreadsheet_id,
+                    ranges=_range,
+                    majorDimension="COLUMNS"
+                ).execute()
         return response

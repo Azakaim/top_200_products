@@ -29,8 +29,7 @@ class PipelineContext(BaseModel):
     account_api_key: str
     since: str
     to: str
-    range_last_updating_date: str
-
+    range_for_clear: str
 
 # service Ozon
 async def fetch_postings(context: PipelineContext):
@@ -247,7 +246,7 @@ async def push_to_sheets(context: PipelineContext, postings: dict, remainders: L
     data = SheetsValuesOut(range=context.account_name, values=val)
     body_value = BatchUpdateValues(value_input_option="USER_ENTERED",data=[data.model_dump()])
     # Записываем данные в таблицу
-    await context.sheets_cli.update_table(sheets_values=body_value)
+    await context.sheets_cli.update_table(sheets_values=body_value,range=context.range_for_clear)
     # форматируем таблицу
 
 # mappers

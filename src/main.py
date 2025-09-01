@@ -13,7 +13,7 @@ from src.clients.ozon.schemas import OzonAPIError, SellerAccount, Remainder
 from src.services.reports_pipeline import push_to_sheets, PipelineContext, fetch_postings, check_date_update, \
     get_remainders
 
-
+# domain/seller_accounts
 def extract_sellers() -> list[SellerAccount]:
     """
     Extracts sellers from the environment variables.
@@ -63,7 +63,6 @@ async def main() -> None:
     scopes = proj_settings.SERVICE_SCOPES.split(',')
     path_to_credentials = proj_settings.PATH_TO_CREDENTIALS
     spreadsheet_id = proj_settings.GOOGLE_SPREADSHEET_ID
-    range_updating_date = proj_settings.GOOGLE_SHEETS_DATE_UPDATING_RANGE
     sheets_cli = SheetsCli(spreadsheet_id=spreadsheet_id,
                            scopes=scopes,
                            path_to_credentials=path_to_credentials)
@@ -75,7 +74,7 @@ async def main() -> None:
     fbs_reports_url = proj_settings.FBS_POSTINGS_REPORT_URL
     fbo_reports_url = proj_settings.FBO_POSTINGS_REPORT_URL
     base_url = proj_settings.OZON_BASE_URL
-    remain_url = proj_settings.OZON_REMAIN_URL
+    remain_url = proj_settings.OZON_REMAINS_URL
     # Инициализация логгера
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     log = logging.getLogger("ozon")
@@ -119,6 +118,8 @@ async def main() -> None:
             if is_today_updating:
                 continue
 
+            range_for_clear = next((ed.range for ed in extracted_dates if ed.range.split('!')[0] == acc.name),None)
+
             pipline_context = PipelineContext(
                 ozon_client=ozon_client,
                 sheets_cli=sheets_cli,
@@ -129,7 +130,7 @@ async def main() -> None:
                 account_api_key=acc.api_key,
                 since=proj_settings.DATE_SINCE,
                 to=proj_settings.DATE_TO,
-                range_last_updating_date=range_updating_date,
+                range_for_clear=range_for_clear
             )
             pipline_contexts.append(pipline_context)
         tasks = [asyncio.create_task(save_context(ctx)) for ctx in pipline_contexts]
