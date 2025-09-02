@@ -65,7 +65,7 @@ class LastChangedStatusDate(BaseModel):
         "populate_by_name": True
     }
 
-class Filter(BaseModel):
+class FilterPosting(BaseModel):
     delivery_method_id: List[str] = Field(default_factory=list, description="List of delivery method IDs to filter by")
     is_quantum: Optional[bool] = Field(default=None, description="Whether the delivery method is quantum or not")
     last_changed_status_date: LastChangedStatusDate = Field(default=None, description="Last changed status date")
@@ -76,18 +76,16 @@ class Filter(BaseModel):
     to: str # ISO 8601 format, e.g. "2025-10-01T00:00:00Z" -- год-месяц-деньTчасы:минуты:секундыZ
     warehouse_id: List[str] = Field(default_factory=list, description="List of warehouse IDs to filter by")
 
-
 class With(BaseModel):
     analytics_data: bool = Field(default=False, description="Whether to include analytics data or not")
     barcodes: bool = Field(default=False, description="Whether to include barcodes or not")
     financial_data: bool = Field( default=True, description="Whether to include financial data or not")
     translit: bool = Field(default=False, description="Whether to include transliterated data or not")
 
-
 class PostingRequestSchema(BaseModel):
     dir: str = Field(default="asc", description="Direction of sorting results, either 'asc' or 'desc'")
-    filter: Filter = Field(
-        default_factory=lambda: Filter(
+    filter: FilterPosting = Field(
+        default_factory=lambda: FilterPosting(
             delivery_method_id=[],
             is_quantum=False,
             last_changed_status_date=LastChangedStatusDate(),
@@ -218,3 +216,56 @@ class OzonAPIError(RuntimeError):
         self.status = status
         self.endpoint = endpoint
         self.body = body
+
+class FilterProducts(BaseModel):
+    offer_id: list = Field(default_factory=list, description="Offer ID associated with the posting")
+    product_id: list = Field(default_factory=list, description="Product ID associated with the posting")
+    visibility: str = "ALL"
+
+class SkusRequestShema(BaseModel):
+    filter: FilterProducts = Field(default_factory=FilterProducts, description="Filter to apply to the postings")
+    last_id: str = Field(default_factory=str, description="Last ID of the posting")
+    limit: int = Field(default_factory=int, description="Limit the number of postings")
+
+# {
+#     "result": {
+#         "items": [
+#             {
+#                 "product_id": 1064988694,
+#                 "offer_id": "426108889",
+#                 "has_fbo_stocks": false,
+#                 "has_fbs_stocks": false,
+#                 "archived": false,
+#                 "is_discounted": false,
+#                 "quants": []
+#             },
+#             {
+#                 "product_id": 1064996491,
+#                 "offer_id": "426001888",
+#                 "has_fbo_stocks": false,
+#                 "has_fbs_stocks": false,
+#                 "archived": false,
+#                 "is_discounted": false,
+#                 "quants": []
+#             }
+#         ],
+#         "total": 304,
+#         "last_id": "WzEwNjQ5OTY0OTEsMTA2NDk5NjQ5MV0="
+#     }
+# }
+class ProductItem(BaseModel):
+    product_id: str = Field(..., description="Product ID associated with the posting")
+    offer_id: str = Field(default_factory=str, description="Offer ID associated with the posting")
+    has_fbo_stocks: bool = Field(..., description="Indicates if the product has free stocks")
+    has_fbs_stocks: bool = Field(..., description="Indicates if the product has free stocks")
+    archived: bool = Field(..., description="Indicates if the product is archived")
+    is_discounted: bool = Field(..., description="Indicates if the product is discounted")
+    quants: list = Field(default_factory=list, description="List of quantities associated with the posting")
+
+class Products(BaseModel):
+    items: list[ProductItem] = Field(default_factory=list, description="List of postings")
+    total: int = Field(default_factory=int, description="Total number of postings")
+    last_id: str = Field(default_factory=str, description="Last ID of the posting")
+
+class SkusResponseShema(BaseModel):
+    result: Products = Field(default_factory=Products, description="Result containing products and pagination info")

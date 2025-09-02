@@ -4,7 +4,7 @@ from typing import Dict, Optional, Any, ClassVar
 from more_itertools import chunked
 from pydantic import BaseModel, PrivateAttr
 
-from src.clients.ozon.schemas import OzonAPIError, PostingRequestSchema, Filter, StatusDelivery, Remainder
+from src.clients.ozon.schemas import OzonAPIError, PostingRequestSchema, StatusDelivery, Remainder, FilterPosting
 from src.utils.limiter import RateLimiter, parse_retry_after_seconds
 
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential_jitter, stop_after_attempt
@@ -156,7 +156,7 @@ class OzonCli(BaseModel):
         offset = 0
         while True:
             status_delivery = self.STATUS_DELIVERY
-            filter_req = Filter(status_alias=status_delivery, since=since, to=to)
+            filter_req = FilterPosting(status_alias=status_delivery, since=since, to=to)
             body_req = PostingRequestSchema(dir="asc", filter=filter_req, limit=limit, offset=offset)
             # Выполняем запрос к Ozon API
             data = await self.request("POST", url,

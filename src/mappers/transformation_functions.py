@@ -87,6 +87,7 @@ async def create_values_range(date_since: str,
     fbo_postings = next((val for key, val in postings.items() if "FBO" in key),None)
     values_range = []
     fbo_res = []
+    fbs_res = []
     if fbo_postings:
         fbo_res = await collect_values_range_by_model(date_since=date_since,
                                                       date_to=date_to,
@@ -96,16 +97,15 @@ async def create_values_range(date_since: str,
                                                       model_posting=fbo_postings,
                                                       remainders=remainders)
 
-    fbs_res = await collect_values_range_by_model(date_since=date_since,
-                                                  date_to=date_to,
-                                                  clusters_names=clusters_names,
-                                                  sheet_titles=sheet_titles,
-                                                  model_name="FBS",
-                                                  model_posting=fbs_postings)
+    if fbs_postings:
+        fbs_res = await collect_values_range_by_model(date_since=date_since,
+                                                      date_to=date_to,
+                                                      clusters_names=clusters_names,
+                                                      sheet_titles=sheet_titles,
+                                                      model_name="FBS",
+                                                      model_posting=fbs_postings)
 
-    # добавляем созданные заголовки для таблицы
-    values_range.append(sheet_titles)
+    # добавляем созданные заголовки для таблицы и постинги
+    values_range.extend([sheet_titles] + fbs_res + fbo_res)
 
-    values_range.extend(fbs_res)
-    values_range.extend(fbo_res)
     return values_range

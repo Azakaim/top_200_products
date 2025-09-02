@@ -1,17 +1,25 @@
 import asyncio
+from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from src.clients.ozon.ozon_client import OzonClient
+from src.clients.ozon.ozon_client import OzonCliBound
 
 
 class OzonService(BaseModel):
-    _cli: OzonClient
+    cli: Optional[OzonCliBound] = None
+
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
 
     async def __collect_reports(self, reports: list, gen):
         async for r in gen:
             postings = await self.__parse_posting(r)
             reports.extend(postings)
+
+    async def __collect_skus(self):
+        ...
 
     async def __parse_posting(self, postings: list[dict]) -> list:
         """

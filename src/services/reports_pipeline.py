@@ -234,13 +234,10 @@ async def create_values_range(context: PipelineContext, postings: dict, remainde
                                                   model_posting=fbs_postings)
 
     # добавляем созданные заголовки для таблицы
-    values_range.append(context.sheet_titles)
-
-    values_range.extend(fbs_res)
-    values_range.extend(fbo_res)
+    values_range.extend([context.sheet_titles] + fbs_res + fbo_res)
     return values_range
 
-# mappers
+# sheets srvice
 async def push_to_sheets(context: PipelineContext, postings: dict, remainders: List[Remainder]) -> None:
     val = await create_values_range(context, postings, remainders)
     data = SheetsValuesOut(range=context.account_name, values=val)

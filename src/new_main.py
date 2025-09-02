@@ -8,43 +8,45 @@ from src.clients.google_sheets.sheets_cli import SheetsCli
 
 from google.oauth2.service_account import Credentials
 
-from src.clients.ozon import ozon_cli
 from src.clients.ozon.ozon_client import OzonClient
 from src.domain.seller_accounts import extract_sellers
 from src.pipeline.pipeline import run_pipeline
 
 
 async def main():
+    # даты обработки
+    since = proj_settings.DATE_SINCE
+    until = proj_settings.DATE_TO
     # Инициализация клиента Google Sheets
     scopes = proj_settings.SERVICE_SCOPES.split(',')
     path_to_credentials = proj_settings.PATH_TO_CREDENTIALS
     spreadsheet_id = proj_settings.GOOGLE_SPREADSHEET_ID
-    sheets_cli = SheetsCli(spreadsheet_id=spreadsheet_id,
-                           scopes=scopes,
-                           path_to_credentials=path_to_credentials)
+    sheets_base_title = proj_settings.GOOGLE_SHEET_BASE_TITLES.split(',')
+    sheets_client = SheetsCli(spreadsheet_id=spreadsheet_id,
+                              scopes=scopes,
+                              path_to_credentials=path_to_credentials,
+                              sheets_base_title=sheets_base_title
+                              )
     creds = Credentials.from_service_account_file(path_to_credentials,
                                                   scopes=scopes)
     # обновляем access token чтобы не авторизоваться заново
     creds.refresh(Request())
 
     # Инициализация клиента Ozon API
-    fbs_reports_url = proj_settings.FBS_POSTINGS_REPORT_URL
-    fbo_reports_url = proj_settings.FBO_POSTINGS_REPORT_URL
+    fbs_reports_url = proj_settings.OZON_FBS_POSTINGS_REPORT_URL
+    fbo_reports_url = proj_settings.OZON_FBO_POSTINGS_REPORT_URL
     base_url = proj_settings.OZON_BASE_URL
     remain_url = proj_settings.OZON_REMAINS_URL
+    products_url = proj_settings.OZON_PRODUCTS_URL
     ozon_client = OzonClient(fbs_reports_url=fbs_reports_url,
                              fbo_reports_url=fbo_reports_url,
                              base_url=base_url,
-                             remain_url=remain_url)
+                             remain_url=remain_url,
+                             products_url=products_url)
 
     # Инициализация логгера
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     log = logging.getLogger("ozon")
-
-    # получаем данные из Google Sheets
-    existed_sheets = await sheets_cli.get_sheets_info()
-    sheets_names = list(existed_sheets.keys())
-    extracted_dates = await sheets_cli.read_table(range_table=sheets_names)
 
     # получаем аккаунты
     client_ids = proj_settings.OZON_CLIENT_IDS.split(',')
@@ -55,8 +57,10 @@ async def main():
                                         names)
 
     await run_pipeline(ozon_cli=ozon_client,
-                       sheets_cli=sheets_cli,
-                       accounts=extracted_sellers)
+                       sheets_cli=sheets_client,
+                       accounts=extracted_sellers,
+                       date_since=since,
+                       date_to=until)
 
 if __name__ == "__main__":
     asyncio.run(main())

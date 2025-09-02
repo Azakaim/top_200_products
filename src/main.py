@@ -71,8 +71,8 @@ async def main() -> None:
     creds.refresh(Request())
 
     # Инициализация клиента Ozon API
-    fbs_reports_url = proj_settings.FBS_POSTINGS_REPORT_URL
-    fbo_reports_url = proj_settings.FBO_POSTINGS_REPORT_URL
+    fbs_reports_url = proj_settings.OZON_FBS_POSTINGS_REPORT_URL
+    fbo_reports_url = proj_settings.OZON_FBO_POSTINGS_REPORT_URL
     base_url = proj_settings.OZON_BASE_URL
     remain_url = proj_settings.OZON_REMAINS_URL
     # Инициализация логгера

@@ -134,7 +134,9 @@ class SheetsCli(BaseModel):
     :param spreadsheet_id: str
     :param scopes: List[str]
     :param path_to_credentials: str
+    :param sheets_base_title: list[str]
     """
+    sheets_base_title: list[str] = []
     spreadsheet_id: str
     scopes: list[str]
 

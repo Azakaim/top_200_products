@@ -5,12 +5,14 @@ from pydantic import BaseModel
 
 from dateutil import parser
 
-from src.clients.google_sheets.schemas import SheetsValuesOut
+from src.clients.google_sheets.schemas import SheetsValuesOut, BatchUpdateValues
 from src.clients.google_sheets.sheets_cli import SheetsCli
+from src.clients.ozon.schemas import Remainder
+from src.mappers.transformation_functions import create_values_range
 
 
 class GoogleSheets(BaseModel):
-    _cli: SheetsCli
+    cli: SheetsCli
 
     async def __parse_date(self, dates: list[str]):
         uniq_dates = []
@@ -23,6 +25,30 @@ class GoogleSheets(BaseModel):
                 except (ValueError, OverflowError, TypeError) as e:
                     continue
         return uniq_dates
+
+    async def push_to_sheets(self, account_name: str,
+                             date_since: str,
+                             date_to: str,
+                             cluster_names: list,
+                             sheet_titles,
+                             postings: dict,
+                             remainders: list[Remainder],
+                             range_scope_clear: str) -> None:
+        val = await create_values_range(date_since=date_since,
+                                        date_to=date_to,
+                                        clusters_names=cluster_names,
+                                        sheet_titles=sheet_titles,
+                                        postings=postings,
+                                        remainders=remainders)
+        data = SheetsValuesOut(range=account_name, values=val)
+        body_value = BatchUpdateValues(value_input_option="USER_ENTERED", data=[data.model_dump()])
+        # Записываем данные в таблицу
+        await self.cli.update_table(sheets_values=body_value,range_table=range_scope_clear)
+        # форматируем таблицу
+
+    async def get_names_sheets(self):
+        existed_sheets = await self.get_identity_sheets()
+        return list(existed_sheets.keys())
 
     async def is_today_updating_date(self, updating_dates: List[str]) -> bool:
         dates = list(set(updating_dates)) if updating_dates else None
@@ -47,8 +73,7 @@ class GoogleSheets(BaseModel):
                                 *,
                                 sheets_cli: SheetsCli,
                                 extracted_dates: List[SheetsValuesOut],
-                                sheet_id=None) -> \
-            Tuple:
+                                sheet_id=None) -> Tuple:
         """
         Check if the date range for the report is valid.
 
@@ -82,11 +107,18 @@ class GoogleSheets(BaseModel):
         :param title: str - title of the sheet to check
         :return: bool - True if the sheet exists, False otherwise
         """
-        meta = await self._cli.get_sheets_info()
+        meta = await self.cli.get_sheets_info()
         # Проверяем, есть ли лист с таким названием
         if title in meta:
             return True, meta[title]
         return False, None
+
+    async def get_identity_sheets(self):
+        return await self.cli.get_sheets_info()
+
+    async def fetch_info(self)-> List[SheetsValuesOut]:
+        sheets_names = await self.get_names_sheets()
+        return await self.cli.read_table(range_table=sheets_names)
 
     async def format_table(self):
         """
