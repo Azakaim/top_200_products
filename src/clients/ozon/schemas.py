@@ -227,34 +227,8 @@ class SkusRequestShema(BaseModel):
     last_id: str = Field(default_factory=str, description="Last ID of the posting")
     limit: int = Field(default_factory=int, description="Limit the number of postings")
 
-# {
-#     "result": {
-#         "items": [
-#             {
-#                 "product_id": 1064988694,
-#                 "offer_id": "426108889",
-#                 "has_fbo_stocks": false,
-#                 "has_fbs_stocks": false,
-#                 "archived": false,
-#                 "is_discounted": false,
-#                 "quants": []
-#             },
-#             {
-#                 "product_id": 1064996491,
-#                 "offer_id": "426001888",
-#                 "has_fbo_stocks": false,
-#                 "has_fbs_stocks": false,
-#                 "archived": false,
-#                 "is_discounted": false,
-#                 "quants": []
-#             }
-#         ],
-#         "total": 304,
-#         "last_id": "WzEwNjQ5OTY0OTEsMTA2NDk5NjQ5MV0="
-#     }
-# }
 class ProductItem(BaseModel):
-    product_id: str = Field(..., description="Product ID associated with the posting")
+    product_id: int = Field(..., description="Product ID associated with the posting")
     offer_id: str = Field(default_factory=str, description="Offer ID associated with the posting")
     has_fbo_stocks: bool = Field(..., description="Indicates if the product has free stocks")
     has_fbs_stocks: bool = Field(..., description="Indicates if the product has free stocks")
@@ -267,5 +241,116 @@ class Products(BaseModel):
     total: int = Field(default_factory=int, description="Total number of postings")
     last_id: str = Field(default_factory=str, description="Last ID of the posting")
 
-class SkusResponseShema(BaseModel):
+class ArticlesResponseShema(BaseModel):
     result: Products = Field(default_factory=Products, description="Result containing products and pagination info")
+
+class Commission(BaseModel):
+    delivery_amount: int = Field(default_factory=int)
+    percent: float = Field(default_factory=float)
+    return_amount: int = Field(default_factory=int)
+    sale_schema: str = Field(default_factory=str)
+    value: float = Field(default_factory=float)
+
+class ExternalIndexData(BaseModel):
+    minimal_price: str = Field(default_factory=str)
+    minimal_price_currency: str = Field(default_factory=str)
+    price_index_value: float = Field(default_factory=float)
+
+class ModelInfo(BaseModel):
+    count: int = Field(default_factory=int)
+    model_id: int = Field(default_factory=int)
+
+class OzonIndexData(BaseModel):
+    minimal_price: str = Field(default_factory=str)
+    minimal_price_currency: str = Field(default_factory=str)
+    price_index_value: float = Field(default_factory=float)
+
+class SelfMarketplacesIndexData(BaseModel):
+    minimal_price: str = Field(default_factory=str)
+    minimal_price_currency: str = Field(default_factory=str)
+    price_index_value: float = Field(default_factory=float)
+
+class Source(BaseModel):
+    created_at: str = Field(default_factory=str)
+    quant_code: str = Field(default_factory=str)
+    shipment_type: str = Field(default_factory=str)
+    sku: int = Field(default_factory=int)
+    source: str = Field(default_factory=str)
+
+class Statuses(BaseModel):
+    is_created: bool = Field(default_factory=bool)
+    moderate_status: str = Field(default_factory=str)
+    status: str = Field(default_factory=str)
+    status_description: str = Field(default_factory=str)
+    status_failed: str = Field(default_factory=str)
+    status_name: str = Field(default_factory=str)
+    status_tooltip: str = Field(default_factory=str)
+    status_updated_at: str = Field(default_factory=str)
+    validation_status: str = Field(default_factory=str)
+
+class PriceIndexes(BaseModel):
+    color_index: str = Field(default_factory=str)
+    external_index_data: ExternalIndexData = Field(default_factory=ExternalIndexData)
+    ozon_index_data: OzonIndexData = Field(default_factory=OzonIndexData)
+    self_marketplaces_index_data: SelfMarketplacesIndexData = Field(default_factory=SelfMarketplacesIndexData)
+
+class Promotion(BaseModel):
+    is_enabled: bool = Field(default_factory=bool)
+    type: str = Field(default="")
+
+class Stock(BaseModel):
+    present: int = Field(default_factory=int)
+    reserved: int = Field(default_factory=int)
+    sku: int = Field(default_factory=int)
+    source: str = Field(default_factory=str)
+
+class VisibilityDetails(BaseModel):
+    has_price: bool = Field(default_factory=bool)
+    has_stock: bool = Field(default_factory=bool)
+
+class Stocks(BaseModel):
+    has_stock: bool = Field(default_factory=bool)
+    stocks: list[Stock] = Field(default_factory=list)
+
+class ProductInfo(BaseModel):
+    barcodes: List[object] = Field(default_factory=list)
+    color_image: List[object] = Field(default_factory=list)
+    commissions: List[Commission] = Field(default_factory=list)
+    created_at: str = Field(default_factory=str)
+    currency_code: str = Field(default_factory=str)
+    description_category_id: int = Field(default_factory=int)
+    discounted_fbo_stocks: int = Field(default_factory=int)
+    errors: List[object] = Field(default_factory=list)
+    has_discounted_fbo_item: bool = Field(default_factory=bool)
+    id: int = Field(default_factory=int)
+    images: List[str] = Field(default_factory=list)
+    images360: List[object] = Field(default_factory=list)
+    is_archived: bool = Field(default_factory=bool)
+    is_autoarchived: bool = Field(default_factory=bool)
+    is_discounted: bool = Field(default_factory=bool)
+    is_kgt: bool = Field(default_factory=bool)
+    is_prepayment_allowed: bool = Field(default_factory=bool)
+    is_seasonal: bool = Field(default_factory=bool)
+    is_super: bool = Field(default_factory=bool)
+    marketing_price: str = Field(default_factory=str)
+    min_price: str = Field(default_factory=str)
+    model_info: ModelInfo = Field(default_factory=ModelInfo)
+    name: str = Field(default_factory=str)
+    offer_id: str = Field(default_factory=str)
+    old_price: str = Field(default_factory=str)
+    price: str = Field(default_factory=str)
+    price_indexes: PriceIndexes = Field(default_factory=PriceIndexes)
+    primary_image: List[str] = Field(default_factory=str)
+    promotions: List[Promotion] = Field(default_factory=Promotion)
+    sku: int = Field(default_factory=int)
+    sources: List[Source] = Field(default_factory=list)
+    statuses: Statuses = Field(default_factory=Statuses)
+    stocks: Stocks = Field(default_factory=Stocks)
+    type_id: int = Field(default_factory=int)
+    updated_at: str = Field(default_factory=str)
+    vat: str = Field(default_factory=str)
+    visibility_details: VisibilityDetails = Field(default_factory=VisibilityDetails)
+    volume_weight: float = Field(default_factory=float)
+
+class SkusResponseShema(BaseModel):
+    result: ProductInfo = Field(default_factory=Products, description="Result containing products and pagination info")

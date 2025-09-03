@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     OZON_API_KEYS: str = Field("", env="OZON_API_KEYS")
     OZON_REMAINS_URL: str = Field("", env="OZON_REMAINS_URL")
     OZON_PRODUCTS_URL: str = Field("", env="OZON_PRODUCTS_URL")
+    OZON_PRODUCTS_INFO_URL: str = Field("", env="OZON_PRODUCTS_INFO")
     OZON_FBS_POSTINGS_REPORT_URL: str = Field("", env="OZON_FBS_POSTINGS_REPORT_URL")
     OZON_FBO_POSTINGS_REPORT_URL: str = Field("", env="OZON_FBO_POSTINGS_REPORT_URL")
     DATE_SINCE: str = Field("", env="DATE_SINCE")

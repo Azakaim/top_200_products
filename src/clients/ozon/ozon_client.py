@@ -5,7 +5,8 @@ from more_itertools import chunked
 from pydantic import BaseModel, PrivateAttr
 
 from src.clients.ozon.schemas import OzonAPIError, PostingRequestSchema, StatusDelivery, Remainder, \
-    SkusRequestShema, FilterProducts, SkusResponseShema
+    SkusRequestShema, FilterProducts, ArticlesResponseShema, FilterPosting
+from src.mappers.transformation_functions import parse_articles, parse_remainders
 from src.utils.limiter import RateLimiter, parse_retry_after_seconds
 
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential_jitter, stop_after_attempt
@@ -20,6 +21,7 @@ class OzonClient(BaseModel):
     fbo_reports_url: str
     remain_url: str
     products_url: str
+    products_whole_info_url: str
     _sem: asyncio.Semaphore = PrivateAttr(default=None) # семафор для ограничения параллельных запросов
     _limiters: Dict[str, RateLimiter] = PrivateAttr({}) # словарь лимитеров для каждого эндпоинта
     _client: httpx.AsyncClient = PrivateAttr(None)
@@ -58,7 +60,7 @@ class OzonClient(BaseModel):
         # ищем точное совпадение или префикс
         return self._limiters.get(endpoint, self._default_limiter)
 
-    async def request(self, method: str, endpoint: str, *, json: Optional[dict] = None, headers: dict=None) -> Any:
+    async def request(self, method: str, endpoint: str, *, json: Optional[dict] = None, headers: Optional[dict]=None) -> Any:
         # limiter = await self._limiter_for(endpoint) # получаем лимитер для данного эндпоинта #TODO: убрать, если не нужно
         # если лимитер не задан, используем дефолтный
         await self._default_limiter.acquire()
@@ -85,7 +87,7 @@ class OzonClient(BaseModel):
                         not_auth = OzonAPIError(resp.status_code, endpoint, resp.text)
                         return { "error": "Unauthorized", "details": str(not_auth) }
                     # 5xx — ретраим с экспонентой
-                    if 500 <= resp.status_code < 600:
+                    if 500 <= resp.status_code < 600 or (resp.status_code == 400):
                         raise OzonAPIError(resp.status_code, endpoint, resp.text)
                     # 4xx (кроме 429) — логическая ошибка, не ретраим
                     raise OzonAPIError(resp.status_code, endpoint, resp.text)
@@ -114,7 +116,9 @@ class OzonClient(BaseModel):
     async def __build_sku_payload(self, skus: list) -> dict:
         return { "offer_id": skus, "product_id": [], "sku": [] }
 
-    async def __manage_batches(self, batches: list,
+    async def __manage_batches(self,
+                               endpoint: str,
+                               batches: list,
                                batch_size: int,
                                headers: dict,
                                payload_builder: Callable[[list],Awaitable[dict]]) -> list:
@@ -122,18 +126,24 @@ class OzonClient(BaseModel):
         for batch in chunked(batches, batch_size):
             # создаем необходимое тело запроса
             payload = await payload_builder(batch)
-            resp = await self.request("POST", self.products_url, json=payload, headers=headers)
+            resp = await self.request("POST", endpoint, json=payload, headers=headers)
             if resp:
-                bodies.extend(resp)
+                bodies.extend(resp["items"])
         return bodies
 
-    async def get_skus(self, *, batches: list, headers: dict) -> list:
-        skus = []
+    async def get_skus(self, *, headers: Optional[dict]=None) -> list:
+        articles = await self.__get_articles(headers=headers)
+        skus = await self.__manage_batches(self.products_whole_info_url,
+                                           articles,
+                                           1000,
+                                           headers,
+                                           self.__build_sku_payload)
         return skus
 
-    async def __get_articles(self, *, headers: dict=None)-> list:
+    async def __get_articles(self, *, headers: Optional[dict]=None)-> list:
         articles = []
         last_id = ""
+        counter = 0
         while len(articles) % 1000 == 0:
             _filter = FilterProducts()
             _data = SkusRequestShema(filter=_filter,
@@ -141,45 +151,20 @@ class OzonClient(BaseModel):
                                     limit=1000)
             json = _data.model_dump()
             resp = await self.request("Post",
-                                         self.products_url,
-                                         json=json,
-                                         headers=headers)
-            try:
-                res = SkusResponseShema(**resp)
-            except (ValueError, OverflowError, TypeError) as e:
-                raise Exception(e)
-            else:
-                articles.extend([p.offer_id for p in res.result.items])
-                last_id = res.result.last_id
-                total = res.result.total
-                if total < 1000:
-                    break
+                                      self.products_url,
+                                      json=json,
+                                      headers=headers)
+            acc_articles, last_id, total = await parse_articles(resp)
+            articles.extend(acc_articles)
+            if total < 1000 or len(articles) == total:
+                break
         return articles
 
-    async def fetch_remainders(self, skus: list[str], headers: dict=None):
-        bodies = self.__manage_batches(skus, 100, headers, payload_builder= self.__build_remain_payload)
-        # remainders = []
-        # if bodies:
-        #     return
-        # # соблюдаем ограничение озона
-        # for batch in chunked(skus, 100):
-        #     bodies.append(batch)
-        # for skus in bodies:
-        #     payload = {
-        #         "skus": skus
-        #     }
-        #     req = await self.request("POST",
-        #                               self.remain_url,
-        #                               json=payload,
-        #                               headers=headers)
-        #     if req:
-        #         remainders.extend([Remainder(**r) for r in req["items"]])
-        # return remainders
-        if bodies:
-            if isinstance(bodies, list):
-                ...
+    async def fetch_remainders(self, skus: list[str], headers: Optional[dict]=None):
+        bodies = await self.__manage_batches( self.remain_url, skus, 100, headers, payload_builder= self.__build_remain_payload)
+        return await parse_remainders(bodies)
 
-    async def generate_reports(self, delivery_way: str, since: str, to: str, *, limit: int = 1000, headers: dict=None):
+    async def generate_reports(self, delivery_way: str, since: str, to: str, *, limit: int = 1000, headers: Optional[dict]=None):
         """
         Получает отчет FBS с Ozon API.
 
@@ -197,7 +182,7 @@ class OzonClient(BaseModel):
         offset = 0
         while True:
             status_delivery = self.STATUS_DELIVERY
-            filter_req = Filter(status_alias=status_delivery, since=since, to=to)
+            filter_req = FilterPosting(status_alias=status_delivery, since=since, to=to)
             body_req = PostingRequestSchema(dir="asc", filter=filter_req, limit=limit, offset=offset)
             # Выполняем запрос к Ozon API
             data = await self.request("POST", url,
@@ -232,23 +217,26 @@ class OzonCliBound:
         self._base = base
         self._headers = headers
 
-    async def request(self, method: str, endpoint: str, *, json: Optional[dict] = None) -> Any:
+    async def request(self, method: str, endpoint: str, *, json: Optional[dict]=None) -> Any:
         return await self._base.request(method, endpoint, json=json, headers=self._headers)
 
-    async def fetch_remainders(self, skus: list[str], headers: dict = None):
+    async def fetch_remainders(self, skus: list[str], headers: Optional[dict]=None):
         return await self._base.fetch_remainders(skus, headers=self._headers or headers)
 
-    async def generate_reports(self, delivery_way: str, since: str, to: str, *, limit: int = 1000,
-                               headers: dict = None):
+    async def generate_reports(self, delivery_way: str,
+                               since: str,
+                               to: str, *,
+                               limit: int = 1000,
+                               headers: Optional[dict]=None):
         async for chunk in self._base.generate_reports(delivery_way,
                                                        since,
                                                        to,
-                                                       limit=1000,
+                                                       limit=limit,
                                                        headers=self._headers or headers):
             yield chunk
 
-    async def get_skus(self, *, batches: list, headers: dict=None)-> list:
-        return await self._base.get_skus(batches=batches, headers=self._headers or headers)
+    async def get_skus(self, *, headers: Optional[dict]=None)-> list:
+        return await self._base.get_skus(headers=self._headers or headers)
 
     async def aclose(self):
         await self._base.aclose()

@@ -1,43 +1,31 @@
 import asyncio
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src.clients.ozon.ozon_client import OzonCliBound
+from src.mappers import parse_postings
+from src.mappers.transformation_functions import parse_skus
 
 
 class OzonService(BaseModel):
     cli: Optional[OzonCliBound] = None
 
     model_config = {
-        "arbitrary_types_allowed": True
+        "arbitrary_types_allowed": True #По умолчанию, если засунуть в модель поле с пользовательским классом
+                                        # (типа OzonCliBound), Pydantic выдаст ошибку — он не знает,
+                                        # как валидировать этот тип.
     }
 
     async def __collect_reports(self, reports: list, gen):
         async for r in gen:
-            postings = await self.__parse_posting(r)
+            postings = await parse_postings(r)
             reports.extend(postings)
 
-    async def __collect_skus(self):
-        ...
-
-    async def __parse_posting(self, postings: list[dict]) -> list:
-        """
-        Преобразует данные о доставке в нужный формат.
-
-        :param postings: Список данных о доставке.
-        :return: Список преобразованных данных.
-        """
-        parsed_postings = []
-
-        for posting in postings:
-            status = posting.get("status")
-            products = posting.get("products", []) or []
-            if products:
-                # Преобразуем каждый продукт доставки в нужный формат
-                chunks = [{str(prod.get("sku")): [prod.get("name"), prod.get("price"), status, str(prod.get("quantity"))]} for prod in products]
-                parsed_postings.extend(chunks) # добавляем преобразованные продукты в общий список
-        return parsed_postings
+    async def collect_skus(self):
+        skus_data = await self.cli.get_skus()
+        skus = await parse_skus(skus_data)
+        return skus if skus else []
 
     async def fetch_postings(self, account_name: str, account_id: str, date_since: str, date_to: str) -> dict:
         """
@@ -60,24 +48,21 @@ class OzonService(BaseModel):
         tasks = [
             # Получаем отчеты FBS
             self.__collect_reports(reports=postings[acc_name_method_fbs],
-                        gen=self._cli.generate_reports(delivery_way="FBS",
+                        gen=self.cli.generate_reports(delivery_way="FBS",
                                                        since=date_since,
                                                        to=date_to)),
             # Получаем отчеты FBO
             self.__collect_reports(reports=postings[acc_name_method_fbo],
-                        gen=self._cli.generate_reports(delivery_way="FBO",
+                        gen=self.cli.generate_reports(delivery_way="FBO",
                                                        since=date_since,
                                                        to=date_to))
         ]
         await asyncio.gather(*tasks)
         return postings
 
-    async def get_remainders(self, postings: list) -> list:
-        skus = []
-        for s in postings:
-            skus.append(next((k for k, v in s.items()), None))
+    async def get_remainders(self, skus: list) -> list:
         sorted_skus = list(set(skus))
-        remainders = await self._cli.fetch_remainders(sorted_skus)
+        remainders = await self.cli.fetch_remainders(sorted_skus)
         if remainders:
             return remainders
         return []

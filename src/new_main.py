@@ -38,11 +38,13 @@ async def main():
     base_url = proj_settings.OZON_BASE_URL
     remain_url = proj_settings.OZON_REMAINS_URL
     products_url = proj_settings.OZON_PRODUCTS_URL
+    products_info_url = proj_settings.OZON_PRODUCTS_INFO_URL
     ozon_client = OzonClient(fbs_reports_url=fbs_reports_url,
                              fbo_reports_url=fbo_reports_url,
                              base_url=base_url,
                              remain_url=remain_url,
-                             products_url=products_url)
+                             products_url=products_url,
+                             products_whole_info_url=products_info_url)
 
     # Инициализация логгера
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

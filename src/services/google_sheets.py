@@ -87,7 +87,7 @@ class GoogleSheets(BaseModel):
             # Добавляем новый лист в таблицу
             await sheets_cli.add_list(title=acc_name)
             # Получаем ID нового листа
-            sheet_id[acc_name] = (await self._cli.check_sheet_exists(title=acc_name))[1]
+            sheet_id[acc_name] = (await self.cli.check_sheet_exists(title=acc_name))[1]
             # Берем значения из таблицы в соответствии с именем листа и кабинета
             sheet_values_acc = next((n.values for n in extracted_dates if acc_name in n.range), None)
         else:
