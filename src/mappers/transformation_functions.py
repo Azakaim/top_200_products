@@ -2,7 +2,6 @@ from datetime import datetime
 from itertools import chain
 
 from src.clients.ozon.schemas import ProductInfo, ArticlesResponseShema, Remainder
-from src.pipeline.pipeline import PipelineSettings
 
 
 async def merge_stock_by_cluster(remains: list[dict]):
@@ -161,7 +160,9 @@ async def collect_stats(acc_postings: tuple, acc_remainders: tuple) -> tuple:
     return acc_context, postings, remainders
 
 async def collect_titles(*, base_titles: list[str], clusters_names: list[str]) -> list[str]:
-    titles = base_titles[:6] + clusters_names + base_titles[6:]
+    base_titles[6] = base_titles[6].replace("date", datetime.today().date().strftime("%d-%m"))
+    base_titles[7] = base_titles[7].replace("date", datetime.today().date().strftime("%d-%m"))
+    titles = base_titles[:8] + clusters_names + base_titles[8:]
     return titles
 
 async def collect_clusters_names(remainders: list[Remainder]):
@@ -171,12 +172,11 @@ async def collect_clusters_names(remainders: list[Remainder]):
              if (r.cluster_name != "")]))
     return clusters_names
 
-async def enrich_acc_context(context: PipelineSettings,
-                             base_sheets_titles: list,
-                             clusters_names: list,
+async def enrich_acc_context(base_sheets_titles: list,
                              remainders: list[Remainder]):
     """
     Updated cluster of names, title of sheet
     """
-    context.clusters_names = await collect_clusters_names(remainders=remainders)
-    context.sheet_titles = await collect_titles(base_titles=base_sheets_titles, clusters_names=clusters_names)
+    clusters_names = await collect_clusters_names(remainders=remainders)
+    sheet_titles = await collect_titles(base_titles=base_sheets_titles, clusters_names=clusters_names)
+    return clusters_names, sheet_titles

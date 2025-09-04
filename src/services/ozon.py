@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from src.clients.ozon.ozon_client import OzonCliBound
+from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.mappers import parse_postings
 from src.mappers.transformation_functions import parse_skus
 

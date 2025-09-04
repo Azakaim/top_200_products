@@ -4,6 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel,  Field
 
 
+#--------------Enums-----------
 class StatusDelivery (StrEnum):
     AWAITING_REGISTRATION = "awaiting_registration" # ожидает регистрации
     ACCEPTANCE_IN_PROGRESS = "acceptance_in_progress" # идёт приёмка
@@ -18,6 +19,28 @@ class StatusDelivery (StrEnum):
     CANCELLED = "cancelled" # отменено
     NOT_ACCEPTED = "not_accepted" # не принят на сортировочном центре
     # SENT_BY_SELLER = "sent_by_seller" # отправлено продавцом
+
+class AnalyticsMetrics(StrEnum):
+    REVENUE = "revenue" # заказано на сумму
+    ORDERED_UNITS = "ordered_units" # заказано товаров
+    UNKNOWN_METRICS = "unknown_metrics" # неизвестная метрика
+    HITS_VIEW_SEARCH = "hits_view_search" # показы в поиске и в категории
+    HITS_VIEW_PDP = "hits_view_pdp" # показы на карточке товара
+    HITS_VIEW = "hits_view" # всего показов
+    HITS_TOCART_SEARCH = "hits_tocart_search" # в корзину из поиска или категории
+    HITS_TOCART_PDP = "hits_tocart_pdp" # в корзину из карточки товара
+    HITS_TOCART = "hits_tocart" # всего добавлено в корзину
+    SESSION_VIEW_SEARCH = "session_view_search" # сессии с показом в поиске или в каталоге. Считаются уникальные посетители с просмотром в поиске или каталоге
+    SESSION_VIEW_PDP = "session_view_pdp" # сессии с показом на карточке товара. Считаются уникальные посетители, которые просмотрели карточку товара
+    SESSION_VIEW = "session_view" # всего сессий. Считаются уникальные посетители
+    CONV_TOCART_SEARCH = "conv_tocart_search" # конверсия в корзину из поиска или категории
+    CONV_TOCART_PDP = "conv_tocart_pdp" # конверсия в корзину из карточки товара
+    CONV_TOCART = "conv_tocart" # общая конверсия в корзину
+    RETURNS = "returns" # возвращено товаров
+    CANCELLATION = "cancellation"   # отменено товаров
+    DELIVERED_UNITS = "delivered_units" # доставлено товаров
+    POSITION_CATEGORY = "position_category" # позиция в поиске и категории
+#------------------------------
 
 class Remainder(BaseModel):
     ads: float = Field(...)
@@ -354,3 +377,33 @@ class ProductInfo(BaseModel):
 
 class SkusResponseShema(BaseModel):
     result: ProductInfo = Field(default_factory=Products, description="Result containing products and pagination info")
+
+class Sort(BaseModel):
+    key: str = Field(default="")
+    order: str = Field(default="")
+
+class AnalyticsRequestSchema(BaseModel):
+    date_from: str = Field(default="")
+    date_to: str = Field(default="")
+    metrics: List[str] = Field(default_factory=list)
+    dimension: List[str] = Field(default_factory=list)
+    filters: List[object] = Field(default_factory=list)
+    sort: List[Sort] = Field(default_factory=list)
+    limit: int = Field(default_factory=int)
+    offset: int = Field(default_factory=int)
+
+class Dimension(BaseModel):
+    id: str = Field("")
+    name: str = Field("")
+
+class Datum(BaseModel):
+    dimensions: List[Dimension] = Field(default_factory=list)
+    metrics: List[int] = Field(default_factory=list)
+
+class AnalyticsResult(BaseModel):
+    data: List[Datum] = Field(default_factory=list)
+    totals: List[int] = Field(default_factory=list)
+
+class AnalyticsResponseSchema(BaseModel):
+    result: AnalyticsResult = Field(default_factory=AnalyticsResult)
+    timestamp: str = Field("")

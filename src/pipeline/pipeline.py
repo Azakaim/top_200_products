@@ -1,57 +1,37 @@
 import asyncio
-from typing import Optional
 
-from pydantic import BaseModel
-
+from settings import proj_settings
 from src.clients.google_sheets.sheets_cli import SheetsCli
-from src.clients.ozon.ozon_client import OzonClient, OzonCliBound
+from src.clients.ozon.ozon_client import OzonClient
+from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.clients.ozon.schemas import SellerAccount
 from src.mappers.transformation_functions import collect_stats, enrich_acc_context
+from src.pipeline.pipeline_settings import PipelineSettings, PipelineCxt
 from src.services.google_sheets import GoogleSheets
 from src.services.ozon import OzonService
 
-BASE_SHEETS_TITLES: list[str] = ["Модель", "SKU", "Наименование",
-                                 "Цена", "Статус", "В заявке",
-                                 "Дата от", "Дата до",
-                                 "Дата обновления"]
 
-class PipelineSettings(BaseModel):
-    model_config = {
-        "arbitrary_types_allowed": True
-    }
+BASE_SHEETS_TITLES: list[str] = proj_settings.GOOGLE_SHEET_BASE_TITLES.split(',')
 
-    ozon: OzonCliBound
-    google_sheets: GoogleSheets
-    sheet_titles: Optional[list[str]] = None
-    clusters_names: Optional[list[str]] = None
-    values_range: Optional[list[list[str]]] = None
-    account_id: str
-    account_name: str
-    account_api_key: str
-    since: str
-    to: str
-    clear_scope_range: Optional[str] = ""
-
-
-async def get_account_postings(context: PipelineSettings):
+async def get_account_postings(context: PipelineCxt):
     ozon_service = OzonService(cli=context.ozon)
     try:
-        postings = await ozon_service.fetch_postings(account_name=context.account_name,
-                                                     account_id=context.account_id,
-                                                     date_since=context.since,
-                                                     date_to=context.to)
+        postings = await ozon_service.fetch_postings(account_name=context.cxt_config.account_name,
+                                                     account_id=context.cxt_config.account_id,
+                                                     date_since=context.cxt_config.since,
+                                                     date_to=context.cxt_config.to)
     finally:
         pass
-    return context, postings
+    return context.cxt_config, postings
 
-async def get_account_remainders(context: PipelineSettings):
+async def get_account_remainders(context: PipelineCxt):
     ozon_service = OzonService(cli=context.ozon)
     try:
         skus = await ozon_service.collect_skus()
         remainders = await ozon_service.get_remainders(skus=skus)
     finally:
         pass
-    return context, remainders
+    return context.cxt_config, remainders
 
 async def run_pipeline(*, ozon_cli: OzonClient,
                        sheets_cli: SheetsCli,
@@ -89,18 +69,19 @@ async def run_pipeline(*, ozon_cli: OzonClient,
             for sheet_name in extracted_dates
             if sheet_name.range.split('!')[0] == acc.name
         ), None)
-
-        pipeline_context.append(PipelineSettings(
-                ozon=ozon_client,
-                google_sheets=google_sheets,
-                values_range=account_table_data,
-                account_name=acc.name,
-                account_id=acc.client_id,
-                account_api_key=acc.api_key,
-                since=date_since,
-                to=date_to,
-                clear_scope_range=clear_scope_range
-        ))
+        # настраиваем контекст и клиента контекста
+        pipeline_settings = PipelineSettings(
+            values_range=account_table_data,
+            account_name=acc.name,
+            account_id=acc.client_id,
+            account_api_key=acc.api_key,
+            since=date_since,
+            to=date_to,
+            clear_scope_range=clear_scope_range
+        )
+        pipeline_cli = PipelineCxt(cxt_config=pipeline_settings,
+                                       ozon=ozon_client)
+        pipeline_context.append(pipeline_cli)
 
     # получаем параллельно остатки и доставки с каждого кабинета
     postings_tasks = [asyncio.create_task(get_account_postings(ctxt)) for ctxt in pipeline_context]
@@ -115,4 +96,8 @@ async def run_pipeline(*, ozon_cli: OzonClient,
     acc_stats = [await collect_stats(p, r) for p, r in zip(acc_postings, acc_remainders)]
 
     for acc_d in acc_stats:
-        await enrich_acc_context(acc_d[0],)
+        remainders = acc_d[2]
+        if isinstance(acc_d[0], PipelineSettings):
+            p_settings: PipelineSettings = acc_d[0]
+            p_settings.clusters_names, p_settings.sheet_titles = await enrich_acc_context(BASE_SHEETS_TITLES, remainders)
+        l = ""
