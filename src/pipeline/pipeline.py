@@ -5,13 +5,30 @@ from src.clients.google_sheets.sheets_cli import SheetsCli
 from src.clients.ozon.ozon_client import OzonClient
 from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.clients.ozon.schemas import SellerAccount
-from src.mappers.transformation_functions import collect_stats, enrich_acc_context
+from src.mappers.transformation_functions import collect_stats, enrich_acc_context, get_converted_date, \
+    remove_archived_skus
 from src.pipeline.pipeline_settings import PipelineSettings, PipelineCxt
 from src.services.google_sheets import GoogleSheets
 from src.services.ozon import OzonService
 
 
 BASE_SHEETS_TITLES: list[str] = proj_settings.GOOGLE_SHEET_BASE_TITLES.split(',')
+
+async def get_account_analytics_data(context: PipelineCxt, analytics_months: list):
+    ozon_service = OzonService(cli=context.ozon)
+    converted_date_since = await get_converted_date(analytics_months)
+    try:
+        _tasks = [asyncio.create_task(
+            ozon_service.collect_analytics_data(month_name=mname,
+                                                date_since=val[0],
+                                                date_to=val[1])
+        )
+            for mname, val in converted_date_since.items()
+        ]
+        analytics_data= await asyncio.gather(*_tasks)
+    finally:
+        pass
+    return analytics_data
 
 async def get_account_postings(context: PipelineCxt):
     ozon_service = OzonService(cli=context.ozon)
@@ -24,20 +41,21 @@ async def get_account_postings(context: PipelineCxt):
         pass
     return context.cxt_config, postings
 
-async def get_account_remainders(context: PipelineCxt):
+async def get_account_remainders_skus(context: PipelineCxt):
     ozon_service = OzonService(cli=context.ozon)
     try:
         skus = await ozon_service.collect_skus()
         remainders = await ozon_service.get_remainders(skus=skus)
     finally:
         pass
-    return context.cxt_config, remainders
+    return context.cxt_config, remainders, skus
 
 async def run_pipeline(*, ozon_cli: OzonClient,
                        sheets_cli: SheetsCli,
                        accounts: list[SellerAccount],
                        date_since: str,
-                       date_to: str):
+                       date_to: str,
+                       analytics_months: list):
     # получаем данные из Google Sheets
     google_sheets = GoogleSheets(cli=sheets_cli)
     existed_sheets = await google_sheets.get_identity_sheets()
@@ -85,12 +103,18 @@ async def run_pipeline(*, ozon_cli: OzonClient,
 
     # получаем параллельно остатки и доставки с каждого кабинета
     postings_tasks = [asyncio.create_task(get_account_postings(ctxt)) for ctxt in pipeline_context]
-    remainders_tasks = [asyncio.create_task(get_account_remainders(ctxt)) for ctxt in pipeline_context]
+    remainders_tasks = [asyncio.create_task(get_account_remainders_skus(ctxt)) for ctxt in pipeline_context]
+    analytics_tasks = [asyncio.create_task(get_account_analytics_data(ctxt, analytics_months)) for ctxt in pipeline_context]
 
-    acc_postings, acc_remainders = await asyncio.gather(
+    acc_postings, acc_remainders, all_analytics = await asyncio.gather(
         asyncio.gather(*postings_tasks),
-        asyncio.gather(*remainders_tasks)
+        asyncio.gather(*remainders_tasks),
+        asyncio.gather(*analytics_tasks)
     )
+
+    # убираем архивные sku
+    skus = acc_remainders[2]
+    analytics = await remove_archived_skus(skus, all_analytics)
 
     # собираем всю инфу о заявках, остатках и контексте аккаунта
     acc_stats = [await collect_stats(p, r) for p, r in zip(acc_postings, acc_remainders)]
@@ -99,5 +123,6 @@ async def run_pipeline(*, ozon_cli: OzonClient,
         remainders = acc_d[2]
         if isinstance(acc_d[0], PipelineSettings):
             p_settings: PipelineSettings = acc_d[0]
-            p_settings.clusters_names, p_settings.sheet_titles = await enrich_acc_context(BASE_SHEETS_TITLES, remainders)
+            p_settings.clusters_names, p_settings.sheet_titles = await enrich_acc_context(BASE_SHEETS_TITLES,
+                                                                                          remainders)
         l = ""

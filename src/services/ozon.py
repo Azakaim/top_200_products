@@ -1,9 +1,11 @@
 import asyncio
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
 
 from src.clients.ozon.ozon_bound_client import OzonCliBound
+from src.clients.ozon.schemas import AnalyticsRequestSchema, AnalyticsMetrics, Sort
 from src.mappers import parse_postings
 from src.mappers.transformation_functions import parse_skus
 
@@ -59,6 +61,22 @@ class OzonService(BaseModel):
         ]
         await asyncio.gather(*tasks)
         return postings
+
+    async def collect_analytics_data(self,month_name: str, date_since: datetime, date_to: datetime):
+        """
+        Метод можно использовать не более 1 р в минуту
+        """
+        metrics = [AnalyticsMetrics.REVENUE, AnalyticsMetrics.ORDERED_UNITS, AnalyticsMetrics.SESSION_VIEW_PDP]
+        dimension = ["sku", "month"]
+        sort = Sort(key=AnalyticsMetrics.REVENUE,order="DESC")
+        body = AnalyticsRequestSchema(date_from=date_since,
+                                      date_to=date_to,
+                                      metrics=metrics,
+                                      dimension=dimension,
+                                      sort=[sort]
+        )
+        data = await self.cli.receive_analytics_data(body)
+        return month_name, data
 
     async def get_remainders(self, skus: list) -> list:
         sorted_skus = list(set(skus))

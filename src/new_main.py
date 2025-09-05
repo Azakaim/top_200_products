@@ -14,9 +14,11 @@ from src.pipeline.pipeline import run_pipeline
 
 
 async def main():
-    # даты обработки
+    # даты обработки доставок
     since = proj_settings.DATE_SINCE
     until = proj_settings.DATE_TO
+    # месяца сбора аналитики
+    analytics_months = proj_settings.ANALYTICS_MONTHS.split(',')
     # Инициализация клиента Google Sheets
     scopes = proj_settings.SERVICE_SCOPES.split(',')
     path_to_credentials = proj_settings.PATH_TO_CREDENTIALS
@@ -39,12 +41,14 @@ async def main():
     remain_url = proj_settings.OZON_REMAINS_URL
     products_url = proj_settings.OZON_PRODUCTS_URL
     products_info_url = proj_settings.OZON_PRODUCTS_INFO_URL
+    analytics_url = proj_settings.OZON_ANALYTICS_URL
     ozon_client = OzonClient(fbs_reports_url=fbs_reports_url,
                              fbo_reports_url=fbo_reports_url,
                              base_url=base_url,
                              remain_url=remain_url,
                              products_url=products_url,
-                             products_whole_info_url=products_info_url)
+                             products_whole_info_url=products_info_url,
+                             analytics_url=analytics_url)
 
     # Инициализация логгера
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -62,7 +66,8 @@ async def main():
                        sheets_cli=sheets_client,
                        accounts=extracted_sellers,
                        date_since=since,
-                       date_to=until)
+                       date_to=until,
+                       analytics_months=analytics_months)
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -1,11 +1,13 @@
 import asyncio
 from typing import Dict, Optional, Any, ClassVar, Callable, Awaitable
+from wsgiref import headers
 
 from more_itertools import chunked
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel, PrivateAttr, ValidationError
 
 from src.clients.ozon.schemas import (OzonAPIError, PostingRequestSchema, StatusDelivery, SkusRequestShema,
-                                      FilterProducts, FilterPosting)
+                                      FilterProducts, FilterPosting, AnalyticsRequestSchema, AnalyticsResponseSchema,
+                                      Datum)
 from src.mappers.transformation_functions import parse_articles, parse_remainders
 from src.utils.limiter import RateLimiter, parse_retry_after_seconds
 
@@ -22,10 +24,12 @@ class OzonClient(BaseModel):
     remain_url: str
     products_url: str
     products_whole_info_url: str
+    analytics_url: str
+
     _sem: asyncio.Semaphore = PrivateAttr(default=None) # семафор для ограничения параллельных запросов
     _limiters: Dict[str, RateLimiter] = PrivateAttr({}) # словарь лимитеров для каждого эндпоинта
     _client: httpx.AsyncClient = PrivateAttr(None)
-    # _per_endpoint_rps: Optional[Dict[str, int]] = PrivateAttr(None) # например: {"/v2/product/info": 5}
+    _per_endpoint_rps: Optional[Dict[str, int]] = PrivateAttr(default_factory=dict) # например: {"/v2/product/info": 5}
     _timeout: float = PrivateAttr(30.0) # таймаут для запросов к Ozon API
     _default_limiter: RateLimiter = PrivateAttr(None) # лимитер по умолчанию для всех эндпоинтов
 
@@ -46,24 +50,29 @@ class OzonClient(BaseModel):
     def model_post_init(self, __context):
         self._sem = asyncio.Semaphore(self.concurrency)
         self._client = httpx.AsyncClient(
-            base_url=self.base_url, timeout=self._timeout,
+            base_url=self.base_url,
+            timeout=self._timeout,
             limits=httpx.Limits(max_keepalive_connections=100, max_connections=100),
             headers={},
         )
         self._default_limiter = RateLimiter(self.default_rps, 1.0)
+        self._per_endpoint_rps[self.analytics_url] = 1
         # инициализируем лимитеры для каждого эндпоинта #TODO: убрать, если не нужен лимиттер для каждого эндпоинта
-        # if self._per_endpoint_rps:
-        #     for ep, rps in self._per_endpoint_rps.items():
-        #         self._limiters[ep] = RateLimiter(rps, 1.0)
+        if self._per_endpoint_rps:
+            for ep, rps in self._per_endpoint_rps.items():
+                self._limiters[ep] = RateLimiter(rps, 60.0)
 
     async def _limiter_for(self, endpoint: str) -> RateLimiter:
         # ищем точное совпадение или префикс
         return self._limiters.get(endpoint, self._default_limiter)
 
     async def request(self, method: str, endpoint: str, *, json: Optional[dict] = None, headers: Optional[dict]=None) -> Any:
-        # limiter = await self._limiter_for(endpoint) # получаем лимитер для данного эндпоинта #TODO: убрать, если не нужно
+        limiter = await self._limiter_for(endpoint) # получаем лимитер для данного эндпоинта #TODO: убрать, если не нужно
+        if limiter:
+            await limiter.acquire()
         # если лимитер не задан, используем дефолтный
-        await self._default_limiter.acquire()
+        else:
+            await self._default_limiter.acquire()
         await self._sem.acquire()
         try:
             async for attempt in AsyncRetrying(
@@ -79,7 +88,7 @@ class OzonClient(BaseModel):
                         return resp.json()
                     # 429 — подчиняемся Retry-After и бросаем ретраибл
                     if resp.status_code == 429:
-                        delay = parse_retry_after_seconds(resp.headers, default=1.5)
+                        delay = parse_retry_after_seconds(resp.headers, default=30.5)
                         await asyncio.sleep(delay)
                         raise OzonAPIError(resp.status_code, endpoint, resp.text)
                     if resp.status_code == 401:
@@ -93,22 +102,6 @@ class OzonClient(BaseModel):
                     raise OzonAPIError(resp.status_code, endpoint, resp.text)
         finally:
             self._sem.release()
-
-    # TODO: разобрать филд валидатор и почему он не работает для поля sellers
-    # @field_validator('sellers', mode='before')
-    # @classmethod
-    # def extract_sellers(cls, values: Any) :
-    #     client_ids = proj_settings.OZON_CLIENT_IDS.split(',')
-    #     api_keys = proj_settings.OZON_API_KEYS.split(',')
-    #     names = proj_settings.OZON_NAME_LK.split(',')
-    #
-    #     if not(len(client_ids) == len(api_keys) == len(names)):
-    #         raise ValueError("Client IDs, API keys, and names must have the same length.")
-    #
-    #     return [
-    #         Seller(api_key=api_keys[i], name=names[i], client_id=client_ids[i])
-    #         for i in range(len(client_ids)) if client_ids[i] and api_keys[i] and names[i]
-    #     ]
 
     async def __build_remain_payload(self, skus: list) -> dict:
         return { "skus": skus }
@@ -143,7 +136,6 @@ class OzonClient(BaseModel):
     async def __get_articles(self, *, headers: Optional[dict]=None)-> list:
         articles = []
         last_id = ""
-        counter = 0
         while len(articles) % 1000 == 0:
             _filter = FilterProducts()
             _data = SkusRequestShema(filter=_filter,
@@ -161,10 +153,42 @@ class OzonClient(BaseModel):
         return articles
 
     async def fetch_remainders(self, skus: list[str], headers: Optional[dict]=None):
-        bodies = await self.__manage_batches( self.remain_url, skus, 100, headers, payload_builder= self.__build_remain_payload)
+        bodies = await self.__manage_batches( self.remain_url,
+                                              skus,
+                                              100,
+                                              headers,
+                                              payload_builder= self.__build_remain_payload)
         return await parse_remainders(bodies)
 
-    async def generate_reports(self, delivery_way: str, since: str, to: str, *, limit: int = 1000, headers: Optional[dict]=None):
+    async def receive_analytics_data(self, analyt_body: AnalyticsRequestSchema, headers: Optional[dict]=None) \
+            -> list[Datum]:
+        analytics_data = []
+        while True:
+            try:
+                resp = await self.request("POST", self.analytics_url, json=analyt_body.to_dict(), headers=headers)
+                parsed_resp = AnalyticsResponseSchema(**resp) if resp else None
+            except ValidationError as e:
+                break
+                raise Exception(e)
+            if parsed_resp:
+                if parsed_resp.result.data:
+                    count = len(parsed_resp.result.data)
+                    if count < 1000:
+                        analytics_data.extend(parsed_resp.result.data)
+                        break
+                    else :
+                        analyt_body.offset += 1000
+                        analytics_data.extend(parsed_resp.result.data)
+            else:
+                break
+        return analytics_data
+
+    async def generate_reports(self, delivery_way: str,
+                               since: str,
+                               to: str,
+                               *,
+                               limit: int = 1000,
+                               headers: Optional[dict]=None):
         """
         Получает отчет FBS с Ozon API.
 

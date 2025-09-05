@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     OZON_FBS_POSTINGS_REPORT_URL: str = Field("", env="OZON_FBS_POSTINGS_REPORT_URL")
     OZON_FBO_POSTINGS_REPORT_URL: str = Field("", env="OZON_FBO_POSTINGS_REPORT_URL")
     OZON_ANALYTICS_URL: str = Field("", env="OZON_ANALYTICS_URL")
+    ANALYTICS_MONTHS: str = Field("", env="ANALYTICS_MONTHS")
     DATE_SINCE: str = Field("", env="DATE_SINCE")
     DATE_TO: str = Field("", env="DATE_TO")
 

@@ -1,6 +1,7 @@
 from typing import Optional
 
 from src.clients.ozon.ozon_client import OzonClient
+from src.clients.ozon.schemas import AnalyticsRequestSchema, Datum
 
 
 class OzonCliBound:
@@ -29,6 +30,10 @@ class OzonCliBound:
 
     async def get_skus(self, *, headers: Optional[dict]=None)-> list:
         return await self._base.get_skus(headers=self._headers or headers)
+
+    async def receive_analytics_data(self, analyt_body: AnalyticsRequestSchema, headers: Optional[dict] = None) \
+            -> list[Datum]:
+        return await self._base.receive_analytics_data(analyt_body,self._headers or headers)
 
     async def aclose(self):
         await self._base.aclose()

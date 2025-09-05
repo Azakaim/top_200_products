@@ -1,7 +1,9 @@
 from datetime import datetime
 from itertools import chain
 
-from src.clients.ozon.schemas import ProductInfo, ArticlesResponseShema, Remainder
+import dateparser
+
+from src.clients.ozon.schemas import ProductInfo, ArticlesResponseShema, Remainder, Datum
 
 
 async def merge_stock_by_cluster(remains: list[dict]):
@@ -159,9 +161,29 @@ async def collect_stats(acc_postings: tuple, acc_remainders: tuple) -> tuple:
     remainders = acc_remainders[1]
     return acc_context, postings, remainders
 
+async def get_converted_date(analytics_months: list):
+    dates = {}
+    for xdate in analytics_months:
+        _month = xdate.split(" ")[0]
+        parsed_date_first_date = dateparser.parse(xdate,
+                                                  languages=["ru"],
+                                                  settings={"PREFER_DAY_OF_MONTH": "first"})  # аналитика с первого
+        parsed_date_last_date = dateparser.parse(xdate,
+                                                 languages=["ru"],
+                                                 settings={"PREFER_DAY_OF_MONTH": "last"})
+        dates[_month] = [parsed_date_first_date, parsed_date_last_date]
+    return dates
+
+async def replace_warehouse_name_date(wname: str) -> str:
+    return wname.replace("date", datetime.today().date().strftime("%d-%m"))
+
+
 async def collect_titles(*, base_titles: list[str], clusters_names: list[str]) -> list[str]:
-    base_titles[6] = base_titles[6].replace("date", datetime.today().date().strftime("%d-%m"))
-    base_titles[7] = base_titles[7].replace("date", datetime.today().date().strftime("%d-%m"))
+    count_col = len(clusters_names)
+    base_titles[6] = await replace_warehouse_name_date(base_titles[6])
+    base_titles[7] = await replace_warehouse_name_date(base_titles[7])
+
+
     titles = base_titles[:8] + clusters_names + base_titles[8:]
     return titles
 
@@ -180,3 +202,6 @@ async def enrich_acc_context(base_sheets_titles: list,
     clusters_names = await collect_clusters_names(remainders=remainders)
     sheet_titles = await collect_titles(base_titles=base_sheets_titles, clusters_names=clusters_names)
     return clusters_names, sheet_titles
+
+async def remove_archived_skus(skus: list[int], analytics_dates: list[Datum]) -> list:
+    return [a for a in analytics_dates if int(a.dimensions[0].id) in skus]

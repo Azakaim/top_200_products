@@ -1,5 +1,6 @@
 from enum import StrEnum
 from typing import List, Optional
+from datetime import datetime
 
 from pydantic import BaseModel,  Field
 
@@ -383,14 +384,17 @@ class Sort(BaseModel):
     order: str = Field(default="")
 
 class AnalyticsRequestSchema(BaseModel):
-    date_from: str = Field(default="")
-    date_to: str = Field(default="")
+    date_from: datetime = Field(default="")
+    date_to: datetime = Field(default="")
     metrics: List[str] = Field(default_factory=list)
     dimension: List[str] = Field(default_factory=list)
     filters: List[object] = Field(default_factory=list)
     sort: List[Sort] = Field(default_factory=list)
-    limit: int = Field(default_factory=int)
+    limit: int = Field(default=1000)
     offset: int = Field(default_factory=int)
+
+    def to_dict(self):
+        return self.model_dump(mode='json')
 
 class Dimension(BaseModel):
     id: str = Field("")
