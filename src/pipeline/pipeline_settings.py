@@ -3,12 +3,11 @@ from typing import Optional
 from pydantic import BaseModel
 
 from src.clients.ozon.ozon_bound_client import OzonCliBound
-from src.services.google_sheets import GoogleSheets
 
 
 class PipelineSettings(BaseModel):
     model_config = {
-        "arbitrary_types_allowed": True # что бы пайдентик понимал что за модель OzonCliBound у него
+        "arbitrary_types_allowed": True ,# что бы пайдентик понимал что за модель OzonCliBound у него
                                         # иначе ругается тк обычный класс, без pydantic‑схемы
                                         # и он не генерил схему валидации
     }

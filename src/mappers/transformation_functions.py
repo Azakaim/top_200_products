@@ -134,7 +134,7 @@ async def parse_postings(postings_data: list[dict]) -> list:
 
 async def parse_skus(skus_data: list[dict]) -> list:
     parsed_skus = [ProductInfo(**s) for s in skus_data]
-    skus = [s.sku for s in parsed_skus]
+    skus = [s.sku for s in parsed_skus if s.sku != 0]
     return skus if skus else []
 
 async def parse_articles(articles_data: dict) -> tuple:
@@ -155,11 +155,14 @@ async def parse_remainders(remainings_data: list) -> list:
         return [Remainder(**r) for r in remainings_data]
     return []
 
-async def collect_stats(acc_postings: tuple, acc_remainders: tuple) -> tuple:
-    acc_context = acc_remainders[0]
-    postings = acc_postings[1]
-    remainders = acc_remainders[1]
-    return acc_context, postings, remainders
+async def collect_stats(acc_postings: tuple, acc_remainders: tuple, acc_analytics: tuple) -> tuple:
+    acc_context, postings, remainders, analytics = None, None, None, None
+    if acc_postings[0].account_id == acc_remainders[0].account_id == acc_analytics[0].account_id:
+        acc_context = acc_remainders[0]
+        postings = acc_postings[1]
+        remainders = acc_remainders[1]
+        analytics = acc_analytics[1]
+    return acc_context, postings, remainders, analytics
 
 async def get_converted_date(analytics_months: list):
     dates = {}
@@ -177,14 +180,16 @@ async def get_converted_date(analytics_months: list):
 async def replace_warehouse_name_date(wname: str) -> str:
     return wname.replace("date", datetime.today().date().strftime("%d-%m"))
 
-
-async def collect_titles(*, base_titles: list[str], clusters_names: list[str]) -> list[str]:
+async def collect_titles(*, base_titles: list[str], clusters_names: list[str],months: list[str]) -> list[str]:
     count_col = len(clusters_names)
     base_titles[6] = await replace_warehouse_name_date(base_titles[6])
     base_titles[7] = await replace_warehouse_name_date(base_titles[7])
+    rev_months = []
+    for m in months:
+        rev_months.extend(["Оборот " + m,
+                           "Заказов " + m])
 
-
-    titles = base_titles[:8] + clusters_names + base_titles[8:]
+    titles = base_titles[:8] + clusters_names + base_titles[8:10] + rev_months + base_titles[10:]
     return titles
 
 async def collect_clusters_names(remainders: list[Remainder]):
@@ -195,13 +200,33 @@ async def collect_clusters_names(remainders: list[Remainder]):
     return clusters_names
 
 async def enrich_acc_context(base_sheets_titles: list,
-                             remainders: list[Remainder]):
+                             remainders: list[Remainder], months: list[str]):
     """
     Updated cluster of names, title of sheet
     """
     clusters_names = await collect_clusters_names(remainders=remainders)
-    sheet_titles = await collect_titles(base_titles=base_sheets_titles, clusters_names=clusters_names)
+    sheet_titles = await collect_titles(base_titles=base_sheets_titles,
+                                        clusters_names=clusters_names,
+                                        months=months)
     return clusters_names, sheet_titles
 
-async def remove_archived_skus(skus: list[int], analytics_dates: list[Datum]) -> list:
-    return [a for a in analytics_dates if int(a.dimensions[0].id) in skus]
+async def remove_archived_skus(acc_remainders: list[tuple[object, list[Remainder], list[int]]] ,
+                               all_analytics: list[tuple[object, tuple[str, list[Datum]]]]):
+    # сортируем аналитику и возвраты по кабинетам tuple(контекст, tuple(возвраты, аналитика по месяцам))
+    data = [(r[0], (r[2], a[1])) for r, a in zip(acc_remainders, all_analytics) if r[0].account_id == a[0].account_id]
+    for d in data:
+        # context
+        acc_id = d[0].account_id
+        # skus
+        skus = d[1][0]
+        # аналитика по месяцам
+        analytics_by_months = d[1][1]
+        for prod in analytics_by_months:
+            # кладем список без архивных продуктов и кладем в аналитику соответствующего кабинета
+            for x_analytics in all_analytics:
+                if acc_id == x_analytics[0].account_id:
+                    for ind, datum in enumerate(x_analytics[1]):
+                        recollected_analytics = (datum[0],[a for a in prod[1] if int(a.dimensions[0].id) in skus and datum[0] == prod[0]])
+                        if recollected_analytics[1]:
+                            x_analytics[1][ind] = recollected_analytics
+                            break

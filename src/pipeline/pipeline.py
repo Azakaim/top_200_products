@@ -28,7 +28,7 @@ async def get_account_analytics_data(context: PipelineCxt, analytics_months: lis
         analytics_data= await asyncio.gather(*_tasks)
     finally:
         pass
-    return analytics_data
+    return context.cxt_config, analytics_data
 
 async def get_account_postings(context: PipelineCxt):
     ozon_service = OzonService(cli=context.ozon)
@@ -113,16 +113,18 @@ async def run_pipeline(*, ozon_cli: OzonClient,
     )
 
     # убираем архивные sku
-    skus = acc_remainders[2]
-    analytics = await remove_archived_skus(skus, all_analytics)
+    await remove_archived_skus(acc_remainders=acc_remainders,
+                               all_analytics=all_analytics)
 
-    # собираем всю инфу о заявках, остатках и контексте аккаунта
-    acc_stats = [await collect_stats(p, r) for p, r in zip(acc_postings, acc_remainders)]
+    # собираем всю инфу о контексте аккаунта, заявках, остатках, аналитике
+    acc_stats = [await collect_stats(p, r, a) for p, r, a in zip(acc_postings, acc_remainders, all_analytics)]
 
     for acc_d in acc_stats:
+        p_settings: PipelineSettings = acc_d[0]
+        postings = acc_d[1]
         remainders = acc_d[2]
-        if isinstance(acc_d[0], PipelineSettings):
-            p_settings: PipelineSettings = acc_d[0]
-            p_settings.clusters_names, p_settings.sheet_titles = await enrich_acc_context(BASE_SHEETS_TITLES,
-                                                                                          remainders)
+        analytics = acc_d[3]
+        p_settings.clusters_names, p_settings.sheet_titles = await enrich_acc_context(BASE_SHEETS_TITLES,
+                                                                                      remainders,
+                                                                                      analytics_months)
         l = ""
