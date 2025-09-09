@@ -1,4 +1,8 @@
 import asyncio
+import pandas as pd
+from botocore.client import BaseClient
+
+from datetime import datetime
 
 from settings import proj_settings
 from src.clients.google_sheets.sheets_cli import SheetsCli
@@ -6,7 +10,7 @@ from src.clients.ozon.ozon_client import OzonClient
 from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.clients.ozon.schemas import SellerAccount
 from src.mappers.transformation_functions import collect_stats, enrich_acc_context, get_converted_date, \
-    remove_archived_skus
+    remove_archived_skus, is_tuesday_today, check_orders_titles
 from src.pipeline.pipeline_settings import PipelineSettings, PipelineCxt
 from src.services.google_sheets import GoogleSheets
 from src.services.ozon import OzonService
@@ -50,7 +54,8 @@ async def get_account_remainders_skus(context: PipelineCxt):
         pass
     return context.cxt_config, remainders, skus
 
-async def run_pipeline(*, ozon_cli: OzonClient,
+async def run_pipeline(*,s3_cli: BaseClient,
+                       ozon_cli: OzonClient,
                        sheets_cli: SheetsCli,
                        accounts: list[SellerAccount],
                        date_since: str,
@@ -77,9 +82,21 @@ async def run_pipeline(*, ozon_cli: OzonClient,
                                                                                       sheets_cli=sheets_cli,
                                                                                       extracted_dates=extracted_dates,
                                                                                       sheet_id=sheet_id)
-        # Если сегодня, то не обновляем таблицу
-        if is_today_updating:
+        # Если сегодня не вторник, то не обновляем таблицу
+        if not await is_tuesday_today():
             continue
+
+        # делаем бекап таблицы с прошлой недели
+        table_metadata = await google_sheets.get_data()
+        df = pd.DataFrame({"данные": account_table_data})
+        df.to_parquet(f"{datetime.now()}.parquet", engine="pyarrow",index=False)
+        df = pd.read_parquet("b.parquet", engine="pyarrow")
+        print(df.head())
+        re = s3_cli.list_buckets()
+        # test
+        for i in re['Buckets']:
+            print(i)
+        t = await check_orders_titles(account_table_data)
 
         # может быть пустым т.к нечего очищать на только что созданном листе
         clear_scope_range = next((

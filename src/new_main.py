@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import boto3
 
 from google.auth.transport.requests import Request
 
@@ -19,6 +20,14 @@ async def main():
     until = proj_settings.DATE_TO
     # месяца сбора аналитики
     analytics_months = proj_settings.ANALYTICS_MONTHS.split(',')
+    # инициализация s3
+
+    s3_cli = boto3.client(
+        's3',
+        aws_access_key_id=proj_settings.S3_ACCESS_KEY,
+        aws_secret_access_key=proj_settings.S3_SECRET_KEY,
+        endpoint_url=proj_settings.S3_ENDPOINT,
+    )
     # Инициализация клиента Google Sheets
     scopes = proj_settings.SERVICE_SCOPES.split(',')
     path_to_credentials = proj_settings.PATH_TO_CREDENTIALS
@@ -62,7 +71,8 @@ async def main():
                                         api_keys,
                                         names)
 
-    await run_pipeline(ozon_cli=ozon_client,
+    await run_pipeline(s3_cli=s3_cli,
+                       ozon_cli=ozon_client,
                        sheets_cli=sheets_client,
                        accounts=extracted_sellers,
                        date_since=since,

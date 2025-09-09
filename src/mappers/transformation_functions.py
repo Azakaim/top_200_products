@@ -236,7 +236,7 @@ async def remove_archived_skus(acc_remainders: list[tuple[object, list[Remainder
                             x_analytics[1][ind] = recollected_analytics
                             break
 
-async def istuesday_today():
+async def is_tuesday_today():
     today = date.today()
     if today.weekday() == 1: # от 0 - 6 где 1 - это вторник
         return True
@@ -247,3 +247,12 @@ async def get_week_range():
     monday = today - timedelta(days=1)
     week_ago = monday - timedelta(days=6)
     return week_ago, monday
+
+async def check_orders_titles(table_date: list[list]):
+    """
+    The func checks the order headers if the last date in the month column is the last date or tuesday of the month,
+    then it returns true or another false
+    """
+    titles = [f[0] for f in table_date]
+
+    return titles

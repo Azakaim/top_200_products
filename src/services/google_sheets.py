@@ -116,9 +116,14 @@ class GoogleSheets(BaseModel):
     async def get_identity_sheets(self):
         return await self.cli.get_sheets_info()
 
-    async def fetch_info(self)-> List[SheetsValuesOut]:
+    async def get_data(self) -> list[dict]:
         sheets_names = await self.get_names_sheets()
         return await self.cli.read_table(range_table=sheets_names)
+
+    async def fetch_info(self)-> List[SheetsValuesOut]:
+        re = await self.cli.get_data()
+        values = [SheetsValuesOut.model_validate(r) for r in re]
+        return values if values else None
 
     async def format_table(self):
         """

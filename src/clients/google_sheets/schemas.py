@@ -3,6 +3,7 @@ from typing import List, Optional, Literal, Final, Tuple, Any, Union
 from pydantic import BaseModel, Field, AliasChoices, field_validator, PrivateAttr
 
 
+
 class SheetsValues(BaseModel):
     range: str = Field(..., description="The A1 notation of the values to update.")
     values: List[List[str]] = Field(default_factory=list)
@@ -19,6 +20,10 @@ class SheetsValuesOut(SheetsValues):
     model_config = {
         "populate_by_name": True
     }
+
+class ResponseSchemaTableData(BaseModel):
+    valueRanges: Optional[list[SheetsValuesOut]] = Field(default_factory=list)
+
 # ===== БАЗОВЫЕ ТИПЫ =====
 
 class Color(BaseModel):

@@ -7,6 +7,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.service_account import Credentials
 
 from settings import proj_settings
+from src.clients.google_sheets.schemas import SheetsValuesOut
 from src.clients.google_sheets.sheets_cli import SheetsCli
 from src.clients.ozon.ozon_cli import OzonCli
 from src.clients.ozon.schemas import OzonAPIError, SellerAccount, Remainder
@@ -82,7 +83,7 @@ async def main() -> None:
     # получаем данные из Google Sheets
     existed_sheets = await sheets_cli.get_sheets_info()
     sheets_names = list(existed_sheets.keys())
-    extracted_dates = await sheets_cli.read_table(range_table=sheets_names)
+    extracted_dates = [SheetsValuesOut.model_validate(r) for r in await sheets_cli.read_value_ranges(range_table=sheets_names)]
     extracted_sellers = extract_sellers()
     pipline_contexts = []
     postings_by_accounts = []

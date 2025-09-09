@@ -255,8 +255,9 @@ async def get_sheet_values(context: PipelineContext, sheet_name: str) -> List[Li
     :return: List[str].
     """
     range_sheet = sheet_name
-    last_updating_date = await context.sheets_cli.read_table(range_table=range_sheet)
-    return [v for v in last_updating_date[0].values] # Возвращаем только значения
+    last_updating_date = await context.sheets_cli.read_value_ranges(range_table=range_sheet)
+    values = [SheetsValuesOut.model_validate(r) for r in last_updating_date]
+    return  values[0].values # Возвращаем только значения
 # Service sheets
 async def format_table():
     """
