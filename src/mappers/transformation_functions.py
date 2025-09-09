@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from itertools import chain
 
 import dateparser
@@ -184,12 +184,17 @@ async def collect_titles(*, base_titles: list[str], clusters_names: list[str],mo
     count_col = len(clusters_names)
     base_titles[6] = await replace_warehouse_name_date(base_titles[6])
     base_titles[7] = await replace_warehouse_name_date(base_titles[7])
-    rev_months = []
+    rev_months_title = []
+    orders_title = []
+    # получаем точные даты месяца
+    month_dates = await get_converted_date(months)
     for m in months:
-        rev_months.extend(["Оборот " + m,
+        rev_months_title.extend(["Оборот " + m,
                            "Заказов " + m])
+        orders_title.extend(["Заказы " + month_dates[m.split(' ')[0]][0].strftime("%d-%m"),
+                             "Оборот " + month_dates[m.split(' ')[0]][0].strftime("%d-%m")])
 
-    titles = base_titles[:8] + clusters_names + base_titles[8:10] + rev_months + base_titles[10:]
+    titles = base_titles[:8] + clusters_names + base_titles[8:9] + rev_months_title + base_titles[9:10] + orders_title + base_titles[10:]
     return titles
 
 async def collect_clusters_names(remainders: list[Remainder]):
@@ -230,3 +235,15 @@ async def remove_archived_skus(acc_remainders: list[tuple[object, list[Remainder
                         if recollected_analytics[1]:
                             x_analytics[1][ind] = recollected_analytics
                             break
+
+async def istuesday_today():
+    today = date.today()
+    if today.weekday() == 1: # от 0 - 6 где 1 - это вторник
+        return True
+    return False
+
+async def get_week_range():
+    today = date.today()
+    monday = today - timedelta(days=1)
+    week_ago = monday - timedelta(days=6)
+    return week_ago, monday

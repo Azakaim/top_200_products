@@ -9,11 +9,18 @@
 import calendar
 
 import dateparser
-from datetime import date
+from datetime import date, timedelta
 
-xdate = "Май 2025"
-parsed_date_first_date = dateparser.parse(xdate, languages=["ru"], settings={"PREFER_DAY_OF_MONTH": "first"}) # аналитика с первого
-parsed_date_last_date = dateparser.parse(xdate, languages=["ru"], settings={"PREFER_DAY_OF_MONTH": "last"}) # аналитика по последний день месяца
-print(parsed_date_first_date.date(), parsed_date_last_date.date())
-print()
+# xdate = "Май 2025"
+# parsed_date_first_date = dateparser.parse(xdate, languages=["ru"], settings={"PREFER_DAY_OF_MONTH": "first"}) # аналитика с первого
+# parsed_date_last_date = dateparser.parse(xdate, languages=["ru"], settings={"PREFER_DAY_OF_MONTH": "last"}) # аналитика по последний день месяца
+# print(parsed_date_first_date.date(), parsed_date_last_date.date())
+# print()
 
+today = date.today()
+print(today.weekday())
+
+
+monday = today - timedelta(days=1)
+week_ago = monday - timedelta(days=6)
+print(week_ago, monday)

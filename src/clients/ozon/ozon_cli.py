@@ -105,22 +105,6 @@ class OzonCli(BaseModel):
         finally:
             self._sem.release()
 
-    # TODO: разобрать филд валидатор и почему он не работает для поля sellers
-    # @field_validator('sellers', mode='before')
-    # @classmethod
-    # def extract_sellers(cls, values: Any) :
-    #     client_ids = proj_settings.OZON_CLIENT_IDS.split(',')
-    #     api_keys = proj_settings.OZON_API_KEYS.split(',')
-    #     names = proj_settings.OZON_NAME_LK.split(',')
-    #
-    #     if not(len(client_ids) == len(api_keys) == len(names)):
-    #         raise ValueError("Client IDs, API keys, and names must have the same length.")
-    #
-    #     return [
-    #         Seller(api_key=api_keys[i], name=names[i], client_id=client_ids[i])
-    #         for i in range(len(client_ids)) if client_ids[i] and api_keys[i] and names[i]
-    #     ]
-
     async def fetch_remainders(self, skus: list[str]):
         bodies = []
         # соблюдаем ограничение озона
@@ -146,7 +130,6 @@ class OzonCli(BaseModel):
         :param since: Start date in ISO 8601 format (e.g., "2025-10-01T00:00:00Z").
         :param to: End date in ISO 8601 format (e.g., "2025-10-01T00:00:00Z").
         :param limit: Number of records to fetch.
-        :param offset: Offset for pagination.
         :return: JSON response from the Ozon API.
         """
         if delivery_way == "FBS":
