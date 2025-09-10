@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from dateutil import parser
 
-from src.clients.google_sheets.schemas import SheetsValuesOut, BatchUpdateValues
+from src.clients.google_sheets.schemas import SheetsValuesOut, BatchUpdateValues, ResponseSchemaTableData
 from src.clients.google_sheets.sheets_cli import SheetsCli
 from src.clients.ozon.schemas import Remainder
 from src.mappers.transformation_functions import create_values_range
@@ -69,7 +69,7 @@ class GoogleSheets(BaseModel):
             print(f"Ошибка при разборе даты: {e}")
         return False
 
-    async def check_date_update(self, acc_name: str,
+    async def check_data_update(self, acc_name: str,
                                 *,
                                 sheets_cli: SheetsCli,
                                 extracted_dates: List[SheetsValuesOut],
@@ -78,7 +78,7 @@ class GoogleSheets(BaseModel):
         Check if the date range for the report is valid.
 
         :param sheets_cli: SheetsCli
-        :param extracted_dates: List[SheetsValuesOut].
+        :param extracted_dates: List[SheetsValuesOut]
         :param acc_name: str
         :param sheet_id
         :return: tuple True if the date range is valid, False otherwise.
@@ -116,14 +116,15 @@ class GoogleSheets(BaseModel):
     async def get_identity_sheets(self):
         return await self.cli.get_sheets_info()
 
-    async def get_data(self) -> list[dict]:
+    async def fetch_info(self)-> tuple[list[SheetsValuesOut], dict]:
         sheets_names = await self.get_names_sheets()
-        return await self.cli.read_table(range_table=sheets_names)
-
-    async def fetch_info(self)-> List[SheetsValuesOut]:
-        re = await self.cli.get_data()
-        values = [SheetsValuesOut.model_validate(r) for r in re]
-        return values if values else None
+        re = await self.cli.read_table(sheets_names)
+        try:
+            value = ResponseSchemaTableData(**re)
+        except (ValueError, OverflowError, TypeError) as e:
+            raise e
+        values = [SheetsValuesOut.model_validate(r) for r in value.valueRanges]
+        return values, re if re else None
 
     async def format_table(self):
         """

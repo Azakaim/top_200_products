@@ -243,7 +243,7 @@ async def push_to_sheets(context: PipelineContext, postings: dict, remainders: L
     data = SheetsValuesOut(range=context.account_name, values=val)
     body_value = BatchUpdateValues(value_input_option="USER_ENTERED",data=[data.model_dump()])
     # Записываем данные в таблицу
-    await context.sheets_cli.update_table(sheets_values=body_value,range=context.range_for_clear)
+    await context.sheets_cli.update_table(sheets_values=body_value,range_table=context.range_for_clear)
     # форматируем таблицу
 
 # mappers

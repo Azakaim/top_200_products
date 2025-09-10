@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build, Resource
 
 from src.clients.google_sheets.schemas import SheetsValuesInTo, Body, SheetsValuesOut, BatchUpdateFormat, \
-    Properties, AddSheet, BatchUpdateValues
+    Properties, AddSheet, BatchUpdateValues, ResponseSchemaTableData
 
 
 class SheetsCli(BaseModel):
@@ -89,16 +89,16 @@ class SheetsCli(BaseModel):
         data = sheets_values.model_dump(by_alias=True, exclude_none=True)
         await self.__move_batch(body_values=data)
 
-    async def read_value_ranges(self,range_table: List[str] | str):
+    async def read_value_ranges(self,range_table: List[str] | str): # TODO удалить после того как main перепишу
         """
-                Method to read the table
+        Method to read the table
 
-                :param range_table:
-                :return:
-                """
+        :param range_table:
+        :return:
+        """
         resp = await self.read_table(range_table=range_table)
-        values = [] # TODO доделать возврат значений
-        return values
+        value = ResponseSchemaTableData(**resp)
+        return value
 
     async def read_table(self, range_table: List[str] | str) -> dict:
         """

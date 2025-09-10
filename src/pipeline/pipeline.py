@@ -1,8 +1,11 @@
 import asyncio
+from datetime import datetime, date, timedelta
+from io import BytesIO
+
 import pandas as pd
 from botocore.client import BaseClient
-
-from datetime import datetime
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from settings import proj_settings
 from src.clients.google_sheets.sheets_cli import SheetsCli
@@ -12,11 +15,12 @@ from src.clients.ozon.schemas import SellerAccount
 from src.mappers.transformation_functions import collect_stats, enrich_acc_context, get_converted_date, \
     remove_archived_skus, is_tuesday_today, check_orders_titles
 from src.pipeline.pipeline_settings import PipelineSettings, PipelineCxt
+from src.services.backup import BackupService
 from src.services.google_sheets import GoogleSheets
 from src.services.ozon import OzonService
 
 
-BASE_SHEETS_TITLES: list[str] = proj_settings.GOOGLE_SHEET_BASE_TITLES.split(',')
+BASE_TOP_SHEET_TITLES: list[str] = proj_settings.GOOGLE_BASE_TOP_SHEET_TITLES.split(',')
 
 async def get_account_analytics_data(context: PipelineCxt, analytics_months: list):
     ozon_service = OzonService(cli=context.ozon)
@@ -60,12 +64,22 @@ async def run_pipeline(*,s3_cli: BaseClient,
                        accounts: list[SellerAccount],
                        date_since: str,
                        date_to: str,
-                       analytics_months: list):
+                       analytics_months: list,
+                       bucket_name: str):
+    # объявляем и инициализируем бекап сервис
+    backup_service = BackupService(bucket_name=bucket_name,
+                                   cli=s3_cli)
     # получаем данные из Google Sheets
     google_sheets = GoogleSheets(cli=sheets_cli)
     existed_sheets = await google_sheets.get_identity_sheets()
-    extracted_dates = await google_sheets.fetch_info()
+    extracted_dates, table_data_for_backup = await google_sheets.fetch_info()
     pipeline_context = []
+
+    # делаем бекап таблицы с прошлой недели, возвращает хеш тег объекта если все ок
+    # мб понадобиться позже пока не использую
+    if table_data_for_backup:
+        await backup_service.save_parquet(table_data_for_backup)
+
     for acc in accounts:
         headers = {
                 "Client-Id": acc.client_id,
@@ -78,24 +92,11 @@ async def run_pipeline(*,s3_cli: BaseClient,
         sheet_id = {acc.name: ""}
         if acc.name in existed_sheets:
             sheet_id = {acc.name: existed_sheets[acc.name]}
-        is_today_updating, account_table_data = await google_sheets.check_date_update(acc.name,
+        is_today_updating, account_table_data = await google_sheets.check_data_update(acc.name,
                                                                                       sheets_cli=sheets_cli,
                                                                                       extracted_dates=extracted_dates,
                                                                                       sheet_id=sheet_id)
-        # Если сегодня не вторник, то не обновляем таблицу
-        if not await is_tuesday_today():
-            continue
-
-        # делаем бекап таблицы с прошлой недели
-        table_metadata = await google_sheets.get_data()
-        df = pd.DataFrame({"данные": account_table_data})
-        df.to_parquet(f"{datetime.now()}.parquet", engine="pyarrow",index=False)
-        df = pd.read_parquet("b.parquet", engine="pyarrow")
-        print(df.head())
-        re = s3_cli.list_buckets()
         # test
-        for i in re['Buckets']:
-            print(i)
         t = await check_orders_titles(account_table_data)
 
         # может быть пустым т.к нечего очищать на только что созданном листе
@@ -104,7 +105,8 @@ async def run_pipeline(*,s3_cli: BaseClient,
             for sheet_name in extracted_dates
             if sheet_name.range.split('!')[0] == acc.name
         ), None)
-        # настраиваем контекст и клиента контекста
+
+        # настраиваем контекст и контекст-клиента
         pipeline_settings = PipelineSettings(
             values_range=account_table_data,
             account_name=acc.name,
@@ -141,7 +143,7 @@ async def run_pipeline(*,s3_cli: BaseClient,
         postings = acc_d[1]
         remainders = acc_d[2]
         analytics = acc_d[3]
-        p_settings.clusters_names, p_settings.sheet_titles = await enrich_acc_context(BASE_SHEETS_TITLES,
+        p_settings.clusters_names, p_settings.sheet_titles = await enrich_acc_context(BASE_TOP_SHEET_TITLES,
                                                                                       remainders,
                                                                                       analytics_months)
         l = ""

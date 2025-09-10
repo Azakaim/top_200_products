@@ -7,7 +7,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.service_account import Credentials
 
 from settings import proj_settings
-from src.clients.google_sheets.schemas import SheetsValuesOut
+from src.clients.google_sheets.schemas import SheetsValuesOut, ResponseSchemaTableData
 from src.clients.google_sheets.sheets_cli import SheetsCli
 from src.clients.ozon.ozon_cli import OzonCli
 from src.clients.ozon.schemas import OzonAPIError, SellerAccount, Remainder
@@ -83,10 +83,10 @@ async def main() -> None:
     # получаем данные из Google Sheets
     existed_sheets = await sheets_cli.get_sheets_info()
     sheets_names = list(existed_sheets.keys())
-    extracted_dates = [SheetsValuesOut.model_validate(r) for r in await sheets_cli.read_value_ranges(range_table=sheets_names)]
+    re = await sheets_cli.read_value_ranges(range_table=sheets_names)
+    extracted_dates = [SheetsValuesOut.model_validate(r) for r in re.valueRanges]
     extracted_sellers = extract_sellers()
     pipline_contexts = []
-    postings_by_accounts = []
     base_sheets_titles: List[str] = ["Модель", "SKU", "Наименование",
                                "Цена", "Статус", "В заявке",
                                "Дата от", "Дата до", "Дата обновления"]
@@ -125,7 +125,6 @@ async def main() -> None:
                 ozon_client=ozon_client,
                 sheets_cli=sheets_cli,
                 values_range=account_table_data,
-                #postings=postings,
                 account_name=acc.name,
                 account_id=acc.client_id,
                 account_api_key=acc.api_key,
@@ -136,19 +135,19 @@ async def main() -> None:
             pipline_contexts.append(pipline_context)
         tasks = [asyncio.create_task(save_context(ctx)) for ctx in pipline_contexts]
 
-        all_cntxt_postings = await asyncio.gather(*tasks)
+        all_ctx_postings = await asyncio.gather(*tasks)
 
         # собираем отправления по всем кабинетам
         fbo_postings = [
             (ctx, next((v for k, v in post.items() if "FBO" in k),None))
-            for ctx, post in all_cntxt_postings
+            for ctx, post in all_ctx_postings
             ]
 
         # получаем FBO остатки с кабинета Озон
         remainders_by_accounts = await asyncio.gather(*(get_remainders_by_account(context=context, postings=postings) for context, postings in fbo_postings if postings))
 
         # закрываем клиентов Озон
-        await asyncio.gather(*(context.ozon_client.aclose() for context, _ in all_cntxt_postings))
+        await asyncio.gather(*(context.ozon_client.aclose() for context, _ in all_ctx_postings))
 
         # создаем заголовки для гугл таблицы
         remainders_batches = [r for d in remainders_by_accounts for r in d.values()]
@@ -158,18 +157,18 @@ async def main() -> None:
         titles = await collect_titles(base_titles=base_sheets_titles,clusters_names=clusters_names)
 
         # пушим в таблицу
-        for context_postings in all_cntxt_postings:
-            cntxt = context_postings[0]
-            cntxt.sheet_titles = titles
-            cntxt.clusters_names = clusters_names
+        for context_postings in all_ctx_postings:
+            ctx = context_postings[0]
+            ctx.sheet_titles = titles
+            ctx.clusters_names = clusters_names
             postings_acc = context_postings[1]
             # остатки для определенного кабинета
-            print(cntxt.account_name)
+            print(ctx.account_name)
             remainders = next(
-            (v for d in remainders_by_accounts for k, v in d.items() if k in cntxt.account_id),
+            (v for d in remainders_by_accounts for k, v in d.items() if k in ctx.account_id),
             None
             )
-            await push_to_sheets(context=cntxt,
+            await push_to_sheets(context=ctx,
                                  postings=postings_acc,
                                  remainders=remainders)
 

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     GOOGLE_SHEETS_URI: str = Field("", env="GOOGLE_SHEETS_URI")
     SERVICE_SCOPES: str = Field("", env="SCOPES")
     PATH_TO_CREDENTIALS: str = Field("", env="PATH_TO_CREDENTIALS")
-    GOOGLE_SHEET_BASE_TITLES: str = Field("",env="GOOGLE_SHEET_BASE_TITLES")
+    GOOGLE_BASE_TOP_SHEET_TITLES: str = Field("", env="GOOGLE_SHEET_BASE_TITLES")
 
     OZON_BASE_URL: str = Field("", env="OZON_BASE_URL")
     OZON_NAME_LK: str = Field("", env="OZON_NAME_LK")
@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     HOST_1C: str = Field("", env="HOST_1C")
     AUTH_LOGIN_1C: str = Field("", env="AUTH_LOGIN_1C")
     AUTH_PASS_1C: str = Field("", env="AUTH_PASS_1C")
+
+    BUCKET_NAME: str = Field("", env="BUCKET_NAME")
+    S3_ACCESS_KEY: str = Field("", env="S3_ACCESS_KEY")
+    S3_SECRET_KEY: str = Field("", env="S3_SECRET_KEY")
+    S3_ENDPOINT: str = Field("", env="S3_ENDPOINT")
 
     class Config:
         env = Env()

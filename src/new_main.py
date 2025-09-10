@@ -11,28 +11,42 @@ from google.oauth2.service_account import Credentials
 
 from src.clients.ozon.ozon_client import OzonClient
 from src.domain.seller_accounts import extract_sellers
+from src.mappers import get_week_range
 from src.pipeline.pipeline import run_pipeline
 
 
 async def main():
+    # Инициализация логгера
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    log = logging.getLogger("ozon")
+
+    # Если сегодня не вторник, то не обновляем таблицу
+    if not True: # await is_tuesday_today(): #TODO убрать заглушку
+        log.info("Tuesday not today")
+        return None
+
     # даты обработки доставок
-    since = proj_settings.DATE_SINCE
-    until = proj_settings.DATE_TO
+    week_range = await get_week_range()
+    since = week_range[0]
+    until = week_range[1]
+
     # месяца сбора аналитики
     analytics_months = proj_settings.ANALYTICS_MONTHS.split(',')
-    # инициализация s3
 
+    # инициализация s3
+    bucket_name = proj_settings.BUCKET_NAME
     s3_cli = boto3.client(
         's3',
         aws_access_key_id=proj_settings.S3_ACCESS_KEY,
         aws_secret_access_key=proj_settings.S3_SECRET_KEY,
         endpoint_url=proj_settings.S3_ENDPOINT,
     )
+
     # Инициализация клиента Google Sheets
     scopes = proj_settings.SERVICE_SCOPES.split(',')
     path_to_credentials = proj_settings.PATH_TO_CREDENTIALS
     spreadsheet_id = proj_settings.GOOGLE_SPREADSHEET_ID
-    sheets_base_title = proj_settings.GOOGLE_SHEET_BASE_TITLES.split(',')
+    sheets_base_title = proj_settings.GOOGLE_BASE_TOP_SHEET_TITLES.split(',')
     sheets_client = SheetsCli(spreadsheet_id=spreadsheet_id,
                               scopes=scopes,
                               path_to_credentials=path_to_credentials,
@@ -40,6 +54,7 @@ async def main():
                               )
     creds = Credentials.from_service_account_file(path_to_credentials,
                                                   scopes=scopes)
+
     # обновляем access token чтобы не авторизоваться заново
     creds.refresh(Request())
 
@@ -59,10 +74,6 @@ async def main():
                              products_whole_info_url=products_info_url,
                              analytics_url=analytics_url)
 
-    # Инициализация логгера
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    log = logging.getLogger("ozon")
-
     # получаем аккаунты
     client_ids = proj_settings.OZON_CLIENT_IDS.split(',')
     api_keys = proj_settings.OZON_API_KEYS.split(',')
@@ -77,7 +88,8 @@ async def main():
                        accounts=extracted_sellers,
                        date_since=since,
                        date_to=until,
-                       analytics_months=analytics_months)
+                       analytics_months=analytics_months,
+                       bucket_name=bucket_name)
 
 if __name__ == "__main__":
     asyncio.run(main())

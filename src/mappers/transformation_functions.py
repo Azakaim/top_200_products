@@ -180,7 +180,8 @@ async def get_converted_date(analytics_months: list):
 async def replace_warehouse_name_date(wname: str) -> str:
     return wname.replace("date", datetime.today().date().strftime("%d-%m"))
 
-async def collect_titles(*, base_titles: list[str], clusters_names: list[str],months: list[str]) -> list[str]:
+async def collect_titles_top_table(*, base_titles: list[str], clusters_names: list[str], months: list[str]) -> list[str]:
+    # TODO нужно поменять параметр месяцы на недели. важно оставить недели текущего месяца и обновлять при наступлении нового
     count_col = len(clusters_names)
     base_titles[6] = await replace_warehouse_name_date(base_titles[6])
     base_titles[7] = await replace_warehouse_name_date(base_titles[7])
@@ -210,7 +211,7 @@ async def enrich_acc_context(base_sheets_titles: list,
     Updated cluster of names, title of sheet
     """
     clusters_names = await collect_clusters_names(remainders=remainders)
-    sheet_titles = await collect_titles(base_titles=base_sheets_titles,
+    sheet_titles = await collect_titles_top_table(base_titles=base_sheets_titles,
                                         clusters_names=clusters_names,
                                         months=months)
     return clusters_names, sheet_titles
@@ -246,7 +247,7 @@ async def get_week_range():
     today = date.today()
     monday = today - timedelta(days=1)
     week_ago = monday - timedelta(days=6)
-    return week_ago, monday
+    return f"{week_ago}T00:00:00Z",f"{monday}T23:59:59Z"
 
 async def check_orders_titles(table_date: list[list]):
     """

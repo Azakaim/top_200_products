@@ -6,6 +6,11 @@ from src.clients.ozon.ozon_bound_client import OzonCliBound
 
 
 class PipelineSettings(BaseModel):
+    """
+    PipelineSettings model
+    :param since str
+    :param to str
+    """
     model_config = {
         "arbitrary_types_allowed": True ,# что бы пайдентик понимал что за модель OzonCliBound у него
                                         # иначе ругается тк обычный класс, без pydantic‑схемы
