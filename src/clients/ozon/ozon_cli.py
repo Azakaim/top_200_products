@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Dict, Optional, Any, ClassVar
 
 from more_itertools import chunked
@@ -9,6 +10,9 @@ from src.utils.limiter import RateLimiter, parse_retry_after_seconds
 
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential_jitter, stop_after_attempt
 import httpx
+
+
+log = logging.getLogger("ozon cli")
 
 class OzonCli(BaseModel):
     # seller_account: SellerAccount = Field(default=None, description="Seller account for Ozon API")

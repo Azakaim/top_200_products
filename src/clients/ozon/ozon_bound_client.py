@@ -1,8 +1,10 @@
+import logging
 from typing import Optional
 
 from src.clients.ozon.ozon_client import OzonClient
 from src.clients.ozon.schemas import AnalyticsRequestSchema, Datum
 
+log = logging.getLogger("ozon bound client")
 
 class OzonCliBound:
     def __init__(self, base: OzonClient,

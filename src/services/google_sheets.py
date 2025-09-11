@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import List, Tuple
 
@@ -10,6 +11,8 @@ from src.clients.google_sheets.sheets_cli import SheetsCli
 from src.clients.ozon.schemas import Remainder
 from src.mappers.transformation_functions import create_values_range
 
+
+log = logging.getLogger("google sheet service")
 
 class GoogleSheets(BaseModel):
     cli: SheetsCli
@@ -71,7 +74,6 @@ class GoogleSheets(BaseModel):
 
     async def check_data_update(self, acc_name: str,
                                 *,
-                                sheets_cli: SheetsCli,
                                 extracted_dates: List[SheetsValuesOut],
                                 sheet_id=None) -> Tuple:
         """
@@ -85,7 +87,7 @@ class GoogleSheets(BaseModel):
         """
         if not sheet_id[acc_name]:
             # Добавляем новый лист в таблицу
-            await sheets_cli.add_list(title=acc_name)
+            await self.cli.add_list(title=acc_name)
             # Получаем ID нового листа
             sheet_id[acc_name] = (await self.cli.check_sheet_exists(title=acc_name))[1]
             # Берем значения из таблицы в соответствии с именем листа и кабинета

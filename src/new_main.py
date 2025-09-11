@@ -15,10 +15,16 @@ from src.mappers import get_week_range
 from src.pipeline.pipeline import run_pipeline
 
 
+async def setup_logging():
+    # Инициализация логгера
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
+
 async def main():
     # Инициализация логгера
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    log = logging.getLogger("ozon")
+    await setup_logging()
 
     # Если сегодня не вторник, то не обновляем таблицу
     if not True: # await is_tuesday_today(): #TODO убрать заглушку

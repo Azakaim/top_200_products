@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 
 import pandas as pd
@@ -11,6 +12,8 @@ from pandas import DataFrame
 from pyasn1_modules.rfc5990 import aes256_Wrap
 from pydantic import BaseModel
 
+
+log = logging.getLogger("backup service")
 
 class BackupService(BaseModel):
     bucket_name: str

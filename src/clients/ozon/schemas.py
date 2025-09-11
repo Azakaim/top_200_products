@@ -96,7 +96,7 @@ class FilterPosting(BaseModel):
     order_id: int = Field(default=0, description="Order ID to filter by")
     provider_id: List[str] = Field(default_factory=list, description="List of provider IDs to filter by")
     since: str # ISO 8601 format, e.g. "2025-10-01T00:00:00Z" -- год-месяц-деньTчасы:минуты:секундыZ
-    status_alias: List[str] = Field(default_factory=list, description="List of status aliases to filter by")
+    status: str = Field(default_factory=str)
     to: str # ISO 8601 format, e.g. "2025-10-01T00:00:00Z" -- год-месяц-деньTчасы:минуты:секундыZ
     warehouse_id: List[str] = Field(default_factory=list, description="List of warehouse IDs to filter by")
 

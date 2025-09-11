@@ -1,14 +1,19 @@
 import asyncio
+import logging
 from datetime import datetime
 from typing import Optional
 
+from more_itertools.more import product_index
 from pydantic import BaseModel
 
 from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.clients.ozon.schemas import AnalyticsRequestSchema, AnalyticsMetrics, Sort
+from src.dto.dto import PostingsProductsCollection, PostingsDataByDeliveryModel
 from src.mappers import parse_postings
 from src.mappers.transformation_functions import parse_skus
 
+
+log = logging.getLogger("ozon")
 
 class OzonService(BaseModel):
     cli: Optional[OzonCliBound] = None
@@ -29,7 +34,8 @@ class OzonService(BaseModel):
         skus = await parse_skus(skus_data)
         return skus if skus else []
 
-    async def fetch_postings(self, account_name: str, account_id: str, date_since: str, date_to: str) -> dict:
+    async def fetch_postings(self, account_name: str, account_id: str, date_since: str, date_to: str) \
+            -> PostingsProductsCollection:
         """
         Fetch postings from Ozon API based on delivery way and date range.
 
@@ -39,28 +45,32 @@ class OzonService(BaseModel):
         :param account_name:
         :return: List of postings.
         """
-        postings = {}
-        print(f"Обработка аккаунта: {account_name} (ID: {account_id})")
-        acc_name_method_fbs = f"{account_name}_FBS"
-        acc_name_method_fbo = f"{account_name}_FBO"
-        postings[acc_name_method_fbs] = []
-        postings[acc_name_method_fbo] = []
+
+        acc_name_fbs = f"{account_name}_FBS"
+        acc_name_fbo = f"{account_name}_FBO"
+        product_collection = PostingsProductsCollection()
+        product_collection.postings_fbs = PostingsDataByDeliveryModel(
+            model=acc_name_fbs
+        )
+        product_collection.postings_fbo = PostingsDataByDeliveryModel(
+            model=acc_name_fbo
+        )
 
         # Получаем отчеты
         tasks = [
             # Получаем отчеты FBS
-            self.__collect_reports(reports=postings[acc_name_method_fbs],
-                        gen=self.cli.generate_reports(delivery_way="FBS",
-                                                       since=date_since,
-                                                       to=date_to)),
+            self.__collect_reports(reports=product_collection.postings_fbs.items,
+                                   gen=self.cli.generate_reports(delivery_way="FBS",
+                                                                 since=date_since,
+                                                                 to=date_to)),
             # Получаем отчеты FBO
-            self.__collect_reports(reports=postings[acc_name_method_fbo],
+            self.__collect_reports(reports=product_collection.postings_fbo.items,
                         gen=self.cli.generate_reports(delivery_way="FBO",
                                                        since=date_since,
                                                        to=date_to))
         ]
         await asyncio.gather(*tasks)
-        return postings
+        return product_collection
 
     async def collect_analytics_data(self,month_name: str, date_since: datetime, date_to: datetime):
         """

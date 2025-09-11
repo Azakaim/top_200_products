@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Dict, Optional, Any, ClassVar, Callable, Awaitable
 from wsgiref import headers
 
@@ -14,6 +15,7 @@ from src.utils.limiter import RateLimiter, parse_retry_after_seconds
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential_jitter, stop_after_attempt
 import httpx
 
+log = logging.getLogger("ozon client")
 
 class OzonClient(BaseModel):
     concurrency: int = 45 # количество параллельных запросов
@@ -158,7 +160,7 @@ class OzonClient(BaseModel):
                                               100,
                                               headers,
                                               payload_builder= self.__build_remain_payload)
-        return await parse_remainders(bodies)
+        return bodies
 
     async def receive_analytics_data(self, analyt_body: AnalyticsRequestSchema, headers: Optional[dict]=None) \
             -> list[Datum]:
@@ -169,7 +171,6 @@ class OzonClient(BaseModel):
                 parsed_resp = AnalyticsResponseSchema(**resp) if resp else None
             except ValidationError as e:
                 break
-                raise Exception(e)
             if parsed_resp:
                 if parsed_resp.result.data:
                     count = len(parsed_resp.result.data)
@@ -206,8 +207,8 @@ class OzonClient(BaseModel):
         offset = 0
         while True:
             status_delivery = self.STATUS_DELIVERY
-            filter_req = FilterPosting(status_alias=status_delivery, since=since, to=to)
-            body_req = PostingRequestSchema(dir="asc", filter=filter_req, limit=limit, offset=offset)
+            filter_req = FilterPosting(since=since, to=to)
+            body_req = PostingRequestSchema(dir="ASC", filter=filter_req, limit=limit, offset=offset)
             # Выполняем запрос к Ozon API
             data = await self.request("POST", url,
                                       json=body_req.model_dump(by_alias=True, exclude_none=True),

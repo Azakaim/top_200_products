@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     SERVICE_SCOPES: str = Field("", env="SCOPES")
     PATH_TO_CREDENTIALS: str = Field("", env="PATH_TO_CREDENTIALS")
     GOOGLE_BASE_TOP_SHEET_TITLES: str = Field("", env="GOOGLE_SHEET_BASE_TITLES")
+    GOOGLE_BASE_SHEETS_TITLES_BY_ACC: str = Field("", env="GOOGLE_BASE_SHEETS_TITLES_BY_ACC")
 
     OZON_BASE_URL: str = Field("", env="OZON_BASE_URL")
     OZON_NAME_LK: str = Field("", env="OZON_NAME_LK")

@@ -76,9 +76,7 @@ async def main() -> None:
     fbo_reports_url = proj_settings.OZON_FBO_POSTINGS_REPORT_URL
     base_url = proj_settings.OZON_BASE_URL
     remain_url = proj_settings.OZON_REMAINS_URL
-    # Инициализация логгера
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    log = logging.getLogger("ozon")
+
 
     # получаем данные из Google Sheets
     existed_sheets = await sheets_cli.get_sheets_info()

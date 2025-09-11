@@ -4,6 +4,7 @@ from itertools import chain
 import dateparser
 
 from src.clients.ozon.schemas import ProductInfo, ArticlesResponseShema, Remainder, Datum
+from src.dto.dto import Item
 
 
 async def merge_stock_by_cluster(remains: list[dict]):
@@ -121,16 +122,26 @@ async def parse_postings(postings_data: list[dict]) -> list:
     :param postings_data: Список данных о доставке.
     :return: Список преобразованных данных.
     """
-    parsed_postings = []
-
+    posting_items = []
     for posting in postings_data:
         status = posting.get("status")
-        products = posting.get("products", []) or []
+        if status != 'cancelled':
+            products = posting.get("products", []) or []
+        else:
+            continue
         if products:
-            # Преобразуем каждый продукт доставки в нужный формат
-            chunks = [{str(prod.get("sku")): [prod.get("name"), prod.get("price"), status, str(prod.get("quantity"))]} for prod in products]
-            parsed_postings.extend(chunks) # добавляем преобразованные продукты в общий список
-    return parsed_postings
+            # добавляем преобразованные продукты в общий список
+            posting_items.extend([
+                Item(
+                    sku_id=prod.get("sku"),
+                    title=prod.get("name"),
+                    price=prod.get("price"),
+                    status=status,
+                    quantity=prod.get("quantity")
+                )
+                for prod in products if prod.get("sku")
+            ])
+    return posting_items
 
 async def parse_skus(skus_data: list[dict]) -> list:
     parsed_skus = [ProductInfo(**s) for s in skus_data]
@@ -156,6 +167,7 @@ async def parse_remainders(remainings_data: list) -> list:
     return []
 
 async def collect_stats(acc_postings: tuple, acc_remainders: tuple, acc_analytics: tuple) -> tuple:
+    # TODO дособрать логику аккумуляции всего в один объект а не тюплы избавится от множетсва нулей при обращении к индексу элемента
     acc_context, postings, remainders, analytics = None, None, None, None
     if acc_postings[0].account_id == acc_remainders[0].account_id == acc_analytics[0].account_id:
         acc_context = acc_remainders[0]
@@ -180,9 +192,8 @@ async def get_converted_date(analytics_months: list):
 async def replace_warehouse_name_date(wname: str) -> str:
     return wname.replace("date", datetime.today().date().strftime("%d-%m"))
 
-async def collect_titles_top_table(*, base_titles: list[str], clusters_names: list[str], months: list[str]) -> list[str]:
+async def collect_titles(*, base_titles: list[str], clusters_names: list[str], months: list[str]) -> list[str]:
     # TODO нужно поменять параметр месяцы на недели. важно оставить недели текущего месяца и обновлять при наступлении нового
-    count_col = len(clusters_names)
     base_titles[6] = await replace_warehouse_name_date(base_titles[6])
     base_titles[7] = await replace_warehouse_name_date(base_titles[7])
     rev_months_title = []
@@ -191,7 +202,7 @@ async def collect_titles_top_table(*, base_titles: list[str], clusters_names: li
     month_dates = await get_converted_date(months)
     for m in months:
         rev_months_title.extend(["Оборот " + m,
-                           "Заказов " + m])
+                                "Заказов " + m])
         orders_title.extend(["Заказы " + month_dates[m.split(' ')[0]][0].strftime("%d-%m"),
                              "Оборот " + month_dates[m.split(' ')[0]][0].strftime("%d-%m")])
 
@@ -211,7 +222,7 @@ async def enrich_acc_context(base_sheets_titles: list,
     Updated cluster of names, title of sheet
     """
     clusters_names = await collect_clusters_names(remainders=remainders)
-    sheet_titles = await collect_titles_top_table(base_titles=base_sheets_titles,
+    sheet_titles = await collect_titles(base_titles=base_sheets_titles,
                                         clusters_names=clusters_names,
                                         months=months)
     return clusters_names, sheet_titles
@@ -228,7 +239,7 @@ async def remove_archived_skus(acc_remainders: list[tuple[object, list[Remainder
         # аналитика по месяцам
         analytics_by_months = d[1][1]
         for prod in analytics_by_months:
-            # кладем список без архивных продуктов и кладем в аналитику соответствующего кабинета
+            # кладем список без архивных продуктов в аналитику соответствующего кабинета
             for x_analytics in all_analytics:
                 if acc_id == x_analytics[0].account_id:
                     for ind, datum in enumerate(x_analytics[1]):
