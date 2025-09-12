@@ -1,39 +1,13 @@
-import asyncio
-from typing import Optional
-
-import httpx
-from pydantic import BaseModel, PrivateAttr
-
-from src.utils.limiter import RateLimiter
+from src.utils.http_base_client import BaseRateLimitedHttpClient
 
 
-class OneCClient(BaseModel):
+class OneCClient(BaseRateLimitedHttpClient):
     """
-    Args:
-        - base_url
-        - prod_uid_url
-        - stocks_url
+    OneCClient:
+        Args:
+            - base_url
+            - prod_uid_url
+            - stocks_url
     """
-    concurrency: int = 45  # количество параллельных запросов
-    default_rps: int = 45  # дефолтный лимит
-    base_url: str
     prod_uid_url: str
     stocks_url: str
-
-    _sem: asyncio.Semaphore = PrivateAttr(default=None)  # семафор для ограничения параллельных запросов
-    _limiters: dict[str, RateLimiter] = PrivateAttr({})  # словарь лимитеров для каждого эндпоинта
-    _client: httpx.AsyncClient = PrivateAttr(None)
-    #_per_endpoint_rps: Optional[dict[str, int]] = PrivateAttr(None) # например: {"/v2/product/info": 5}
-    _timeout: float = PrivateAttr(30.0)  # таймаут для запросов
-    _default_limiter: RateLimiter = PrivateAttr(None)  # лимитер по умолчанию для всех эндпоинтов
-
-    def model_post_init(self, __context):
-        self._sem = asyncio.Semaphore(self.concurrency)
-        self._client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=self._timeout,
-            limits=httpx.Limits(max_keepalive_connections=100, max_connections=100),
-            headers={},
-        )
-        self._default_limiter = RateLimiter(self.default_rps, 1.0)
-        #self._per_endpoint_rps[self.analytics_url] = 1

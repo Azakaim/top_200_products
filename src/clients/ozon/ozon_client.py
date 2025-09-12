@@ -17,7 +17,7 @@ import httpx
 
 log = logging.getLogger("ozon client")
 
-class OzonClient(BaseModel):
+class OzonClient(BaseModel): # TODO доработать наследование
     concurrency: int = 45 # количество параллельных запросов
     default_rps: int = 45 # дефолтный лимит на аккаунт
     base_url: str

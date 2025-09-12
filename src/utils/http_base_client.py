@@ -7,13 +7,6 @@ from src.utils.limiter import RateLimiter
 
 
 class BaseRateLimitedHttpClient(BaseModel):
-    """
-    BaseRateLimitedHttpClient:
-        Args:
-            - base_url - требуемые аргументы
-            - prod_uid_url - требуемые аргументы
-            - stocks_url - требуемые аргументы
-        """
     concurrency: int = 45  # количество параллельных запросов
     default_rps: int = 45  # дефолтный лимит
     base_url: str
