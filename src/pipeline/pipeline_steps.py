@@ -5,7 +5,8 @@ from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.clients.ozon.ozon_client import OzonClient
 from src.clients.ozon.schemas import SellerAccount
 from src.mappers import get_converted_date
-from src.dto.dto import SheetsData
+from src.dto.dto import SheetsData, AccountMonthlyStatsRemainders, AccountMonthlyStatsPostings, \
+    AccountMonthlyStatsAnalytics
 from src.pipeline.pipeline_settings import PipelineSettings, PipelineCxt
 from src.services.google_sheets import GoogleSheets
 from src.services.ozon import OzonService
@@ -93,7 +94,8 @@ async def get_account_analytics_data(context: PipelineCxt, analytics_months: lis
         analytics_data= await asyncio.gather(*_tasks)
     finally:
         pass
-    return context.cxt_config, analytics_data
+    return AccountMonthlyStatsAnalytics(ctx=context.cxt_config,
+                                        monthly_analytics=analytics_data)
 
 async def get_account_postings(context: PipelineCxt):
     ozon_service = OzonService(cli=context.ozon)
@@ -104,7 +106,8 @@ async def get_account_postings(context: PipelineCxt):
                                                      date_to=context.cxt_config.to)
     finally:
         pass
-    return context.cxt_config, postings
+    return AccountMonthlyStatsPostings(ctx=context.cxt_config,
+                                       postings=postings)
 
 async def get_account_remainders_skus(context: PipelineCxt):
     ozon_service = OzonService(cli=context.ozon)
@@ -113,4 +116,6 @@ async def get_account_remainders_skus(context: PipelineCxt):
         remainders = await ozon_service.get_remainders(skus=skus)
     finally:
         pass
-    return context.cxt_config, remainders, skus
+    return AccountMonthlyStatsRemainders(ctx=context.cxt_config,
+                                         skus=skus,
+                                         remainders=remainders)

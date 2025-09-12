@@ -73,11 +73,7 @@ async def run_pipeline(*,s3_cli: BaseClient,
     acc_stats = [await collect_stats(p, r, a) for p, r, a in zip(acc_postings, acc_remainders, all_analytics)]
 
     for acc_d in acc_stats:
-        p_settings: PipelineSettings = acc_d[0]
-        postings = acc_d[1]
-        remainders = acc_d[2]
-        analytics = acc_d[3]
-        p_settings.clusters_names, p_settings.sheet_titles = await enrich_acc_context(BASE_TOP_SHEET_TITLES,
-                                                                                      remainders,
-                                                                                      analytics_months)
+        acc_d.ctx.clusters_names, acc_d.ctx.sheet_titles = await enrich_acc_context(BASE_TOP_SHEET_TITLES,
+                                                                                    acc_d.remainders,
+                                                                                    analytics_months)
         l = ""

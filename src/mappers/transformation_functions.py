@@ -4,7 +4,8 @@ from itertools import chain
 import dateparser
 
 from src.clients.ozon.schemas import ProductInfo, ArticlesResponseShema, Remainder, Datum
-from src.dto.dto import Item
+from src.dto.dto import Item, AccountMonthlyStatsRemainders, AccountMonthlyStatsAnalytics, AccountMonthlyStats, \
+    MonthlyStats, AccountMonthlyStatsPostings, CollectionStats
 
 
 async def merge_stock_by_cluster(remains: list[dict]):
@@ -166,15 +167,18 @@ async def parse_remainders(remainings_data: list) -> list:
         return [Remainder(**r) for r in remainings_data]
     return []
 
-async def collect_stats(acc_postings: tuple, acc_remainders: tuple, acc_analytics: tuple) -> tuple:
+async def collect_stats(acc_postings: AccountMonthlyStatsPostings, acc_remainders: AccountMonthlyStatsRemainders, acc_analytics: AccountMonthlyStatsAnalytics) -> CollectionStats:
     # TODO дособрать логику аккумуляции всего в один объект а не тюплы избавится от множетсва нулей при обращении к индексу элемента
-    acc_context, postings, remainders, analytics = None, None, None, None
-    if acc_postings[0].account_id == acc_remainders[0].account_id == acc_analytics[0].account_id:
-        acc_context = acc_remainders[0]
-        postings = acc_postings[1]
-        remainders = acc_remainders[1]
-        analytics = acc_analytics[1]
-    return acc_context, postings, remainders, analytics
+    acc_context, postings, remainders, monthly_analytics = None, None, None, None
+    if acc_postings.ctx.account_id == acc_remainders.ctx.account_id == acc_analytics.ctx.account_id:
+        acc_context = acc_remainders.ctx
+        postings = acc_postings.postings
+        remainders = acc_remainders.remainders
+        monthly_analytics = acc_analytics.monthly_analytics
+    return CollectionStats(ctx=acc_context,
+                           postings=postings,
+                           remainders=remainders,
+                           monthly_analytics=monthly_analytics)
 
 async def get_converted_date(analytics_months: list):
     dates = {}
@@ -227,26 +231,27 @@ async def enrich_acc_context(base_sheets_titles: list,
                                         months=months)
     return clusters_names, sheet_titles
 
-async def remove_archived_skus(acc_remainders: list[tuple[object, list[Remainder], list[int]]] ,
-                               all_analytics: list[tuple[object, tuple[str, list[Datum]]]]):
+async def remove_archived_skus(acc_remainders: list[AccountMonthlyStatsRemainders],
+                               all_analytics: list[AccountMonthlyStatsAnalytics]):
     # сортируем аналитику и возвраты по кабинетам tuple(контекст, tuple(возвраты, аналитика по месяцам))
-    data = [(r[0], (r[2], a[1])) for r, a in zip(acc_remainders, all_analytics) if r[0].account_id == a[0].account_id]
+    # data = [AccountMonthlyStats(ctx=r[0],skus=r[2],stats=a[1]) for r, a in zip(acc_remainders, all_analytics) if r[0].account_id == a[0].account_id]
+    data = [AccountMonthlyStats(ctx=r.ctx, skus=r.skus, monthly_analytics=a.monthly_analytics) for r, a in zip(acc_remainders, all_analytics) if r.ctx.account_id == a.ctx.account_id]
     for d in data:
-        # context
-        acc_id = d[0].account_id
-        # skus
-        skus = d[1][0]
         # аналитика по месяцам
-        analytics_by_months = d[1][1]
-        for prod in analytics_by_months:
+        for prod in d.monthly_analytics:
             # кладем список без архивных продуктов в аналитику соответствующего кабинета
             for x_analytics in all_analytics:
-                if acc_id == x_analytics[0].account_id:
-                    for ind, datum in enumerate(x_analytics[1]):
-                        recollected_analytics = (datum[0],[a for a in prod[1] if int(a.dimensions[0].id) in skus and datum[0] == prod[0]])
-                        if recollected_analytics[1]:
-                            x_analytics[1][ind] = recollected_analytics
+                if d.ctx.account_id == x_analytics.ctx.account_id:
+                    for ind, data in enumerate(x_analytics.monthly_analytics):
+                        new_datum = [x for x in prod.datum if int(x.dimensions[0].id) in d.skus and data.month == prod.month]
+                        recollected_analytics =  MonthlyStats(month=data.month,datum=new_datum if new_datum is not None else [])
+                        if recollected_analytics.datum:
+                            x_analytics.monthly_analytics[ind] = recollected_analytics
                             break
+                    #     recollected_analytics = (datum.month,[a for a in prod.datum if int(a.dimensions[0].id) in d.skus and datum.month == prod.month])
+                    #     if recollected_analytics[1]:
+                    #         x_analytics[1][ind] = recollected_analytics
+                    #         break
 
 async def is_tuesday_today():
     today = date.today()

@@ -3,12 +3,11 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from more_itertools.more import product_index
 from pydantic import BaseModel
 
 from src.clients.ozon.ozon_bound_client import OzonCliBound
-from src.clients.ozon.schemas import AnalyticsRequestSchema, AnalyticsMetrics, Sort
-from src.dto.dto import PostingsProductsCollection, PostingsDataByDeliveryModel
+from src.clients.ozon.schemas import AnalyticsRequestSchema, AnalyticsMetrics, Sort, Remainder
+from src.dto.dto import PostingsProductsCollection, PostingsDataByDeliveryModel, MonthlyStats
 from src.mappers import parse_postings
 from src.mappers.transformation_functions import parse_skus
 
@@ -86,11 +85,12 @@ class OzonService(BaseModel):
                                       sort=[sort]
         )
         data = await self.cli.receive_analytics_data(body)
-        return month_name, data
+        return MonthlyStats(month=month_name,
+                            datum=data)
 
     async def get_remainders(self, skus: list) -> list:
         sorted_skus = list(set(skus))
         remainders = await self.cli.fetch_remainders(sorted_skus)
         if remainders:
-            return remainders
+            return [Remainder(**r) for r in remainders]
         return []

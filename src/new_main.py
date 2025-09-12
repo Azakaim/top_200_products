@@ -9,6 +9,7 @@ from src.clients.google_sheets.sheets_cli import SheetsCli
 
 from google.oauth2.service_account import Credentials
 
+from src.clients.onec.onec_cli import OneCClient
 from src.clients.ozon.ozon_client import OzonClient
 from src.domain.seller_accounts import extract_sellers
 from src.mappers import get_week_range
@@ -46,6 +47,19 @@ async def main():
         aws_access_key_id=proj_settings.S3_ACCESS_KEY,
         aws_secret_access_key=proj_settings.S3_SECRET_KEY,
         endpoint_url=proj_settings.S3_ENDPOINT,
+    )
+
+    # Инициализация клиента 1 С
+    oc_host= proj_settings.ONEC_HOST
+    oc_endpoints = proj_settings.ONEC_ENDPOINTS.split(',')
+    prod_uid_url = oc_endpoints[0]
+    stocks_url = oc_endpoints[1]
+    oc_auth_login = proj_settings.ONEC_AUTH_LOGIN
+    oc_auth_password = proj_settings.ONEC_AUTH_PASS
+    one_c = OneCClient(
+        base_url=oc_host,
+        prod_uid_url=prod_uid_url,
+        stocks_url=stocks_url,
     )
 
     # Инициализация клиента Google Sheets
@@ -99,5 +113,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-

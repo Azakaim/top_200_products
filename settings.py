@@ -37,9 +37,10 @@ class Settings(BaseSettings):
     DATE_SINCE: str = Field("", env="DATE_SINCE")
     DATE_TO: str = Field("", env="DATE_TO")
 
-    HOST_1C: str = Field("", env="HOST_1C")
-    AUTH_LOGIN_1C: str = Field("", env="AUTH_LOGIN_1C")
-    AUTH_PASS_1C: str = Field("", env="AUTH_PASS_1C")
+    ONEC_HOST: str = Field("", env="ONEC_HOST")
+    ONEC_ENDPOINTS: str = Field("", env="ONEC_ENDPOINTS")
+    ONEC_AUTH_LOGIN: str = Field("", env="ONEC_AUTH_LOGIN")
+    ONEC_AUTH_PASS: str = Field("", env="ONEC_AUTH_PASS")
 
     BUCKET_NAME: str = Field("", env="BUCKET_NAME")
     S3_ACCESS_KEY: str = Field("", env="S3_ACCESS_KEY")
