@@ -11,7 +11,9 @@ from google.oauth2.service_account import Credentials
 
 from src.clients.onec.onec_cli import OneCClient
 from src.clients.ozon.ozon_client import OzonClient
+from src.domain.repositories.cache_repo import CacheRepository
 from src.domain.seller_accounts import extract_sellers
+from src.infrastructure.cache import Cache
 from src.mappers import get_week_range
 from src.pipeline.pipeline import run_pipeline
 
@@ -39,6 +41,12 @@ async def main():
 
     # месяца сбора аналитики
     analytics_months = proj_settings.ANALYTICS_MONTHS.split(',')
+
+    # инициализация redis
+    # cache = Cache(
+    #     host=proj_settings.REDIS_HOST,
+    #     port=proj_settings.REDIS_PORT,
+    # )
 
     # инициализация s3
     bucket_name = proj_settings.BUCKET_NAME
@@ -103,6 +111,7 @@ async def main():
                                         names)
 
     await run_pipeline(s3_cli=s3_cli,
+                       # cache=cache,
                        ozon_cli=ozon_client,
                        sheets_cli=sheets_client,
                        accounts=extracted_sellers,

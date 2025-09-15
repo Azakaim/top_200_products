@@ -7,13 +7,13 @@ from settings import proj_settings
 from src.clients.google_sheets.sheets_cli import SheetsCli
 from src.clients.ozon.ozon_client import OzonClient
 from src.clients.ozon.schemas import SellerAccount
+from src.infrastructure.cache import Cache
 from src.mappers.transformation_functions import collect_stats, enrich_acc_context, \
     remove_archived_skus, check_orders_titles
 from src.pipeline.pipeline_steps import get_sheets_data, get_pipeline_ctx, get_account_postings, \
     get_account_analytics_data, get_account_remainders_skus
 from src.services.backup import BackupService
 from src.services.google_sheets import GoogleSheets
-from src.pipeline.pipeline_settings import *
 
 
 BASE_TOP_SHEET_TITLES: list[str] = proj_settings.GOOGLE_BASE_TOP_SHEET_TITLES.split(',')
@@ -22,6 +22,7 @@ BASE_SHEETS_TITLES_BY_ACC: list[str] = proj_settings.GOOGLE_BASE_SHEETS_TITLES_B
 log = logging.getLogger("pipeline")
 
 async def run_pipeline(*,s3_cli: BaseClient,
+                       # cache: Cache,
                        ozon_cli: OzonClient,
                        sheets_cli: SheetsCli,
                        accounts: list[SellerAccount],

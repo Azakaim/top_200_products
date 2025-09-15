@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str = Field("localhost", env="POSTGRES_HOST")
     POSTGRES_PORT: int | str = Field("5432", env="POSTGRES_PORT")
 
-    REDIS_HOST: str = Field("redis://redis:6379", env="REDIS_HOST")
+    REDIS_HOST: str = Field("", env="REDIS_HOST")
+    REDIS_PORT: str = Field("", env="REDIS_PORT")
 
     GOOGLE_SPREADSHEET_ID: str = Field("", env="GOOGLE_SPREADSHEET_ID")
     GOOGLE_CLIENT_SECRET: str = Field("", env="GOOGLE_CLIENT_SECRET")

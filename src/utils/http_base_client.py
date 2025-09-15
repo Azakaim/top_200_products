@@ -10,14 +10,12 @@ class BaseRateLimitedHttpClient(BaseModel):
     concurrency: int = 45  # количество параллельных запросов
     default_rps: int = 45  # дефолтный лимит
     base_url: str
-    prod_uid_url: str
-    stocks_url: str
 
     _sem: asyncio.Semaphore = PrivateAttr(default=None)  # семафор для ограничения параллельных запросов
-    _limiters: dict[str, RateLimiter] = PrivateAttr({})  # словарь лимитеров для каждого эндпоинта
-    _client: httpx.AsyncClient = PrivateAttr(None)
-    _timeout: float = PrivateAttr()  # таймаут для запросов
-    _default_limiter: RateLimiter = PrivateAttr(None)  # лимитер по умолчанию для всех эндпоинтов
+    _limiters: dict[str, RateLimiter] = PrivateAttr(default_factory=dict)  # словарь лимитеров для каждого эндпоинта
+    _client: httpx.AsyncClient = PrivateAttr(default=None)
+    _timeout: float = PrivateAttr(default=None)  # таймаут для запросов
+    _default_limiter: RateLimiter = PrivateAttr(default=None)  # лимитер по умолчанию для всех эндпоинтов
 
     def model_post_init(self, __context):
         self._sem = asyncio.Semaphore(self.concurrency)
@@ -28,3 +26,10 @@ class BaseRateLimitedHttpClient(BaseModel):
             headers={},
         )
         self._default_limiter = RateLimiter(self.default_rps, 1.0)
+
+    async def _limiter_for(self, endpoint: str) -> RateLimiter:
+        # ищем точное совпадение или префикс
+        return self._limiters.get(endpoint, self._default_limiter)
+
+    async def aclose(self):
+        await self._client.aclose()

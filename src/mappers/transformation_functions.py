@@ -1,5 +1,6 @@
 from datetime import datetime, date, timedelta
 from itertools import chain
+from typing import get_type_hints
 
 import dateparser
 
@@ -258,6 +259,10 @@ async def is_tuesday_today():
     if today.weekday() == 1: # от 0 - 6 где 1 - это вторник
         return True
     return False
+
+async def get_type_func(func):
+    return_type = get_type_hints(func)
+    return return_type.get("return")
 
 async def get_week_range():
     today = date.today()

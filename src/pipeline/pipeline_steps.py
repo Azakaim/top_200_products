@@ -4,6 +4,7 @@ from src.clients.google_sheets.schemas import SheetsValuesOut
 from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.clients.ozon.ozon_client import OzonClient
 from src.clients.ozon.schemas import SellerAccount
+from src.infrastructure.cache import Cache, call_cache
 from src.mappers import get_converted_date
 from src.dto.dto import SheetsData, AccountMonthlyStatsRemainders, AccountMonthlyStatsPostings, \
     AccountMonthlyStatsAnalytics
@@ -98,6 +99,7 @@ async def get_account_analytics_data(context: PipelineCxt, analytics_months: lis
                                         monthly_analytics=analytics_data)
 
 async def get_account_postings(context: PipelineCxt):
+
     ozon_service = OzonService(cli=context.ozon)
     try:
         postings = await ozon_service.fetch_postings(account_name=context.cxt_config.account_name,
