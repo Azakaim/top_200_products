@@ -1,10 +1,11 @@
+import json
 from datetime import datetime, date, timedelta
 from itertools import chain
-from typing import get_type_hints
+from typing import get_type_hints, Type, Any
 
 import dateparser
 
-from src.clients.ozon.schemas import ProductInfo, ArticlesResponseShema, Remainder, Datum
+from src.schemas.ozon_schemas import ProductInfo, Remainder
 from src.dto.dto import Item, AccountMonthlyStatsRemainders, AccountMonthlyStatsAnalytics, AccountMonthlyStats, \
     MonthlyStats, AccountMonthlyStatsPostings, CollectionStats
 
@@ -150,19 +151,6 @@ async def parse_skus(skus_data: list[dict]) -> list:
     skus = [s.sku for s in parsed_skus if s.sku != 0]
     return skus if skus else []
 
-async def parse_articles(articles_data: dict) -> tuple:
-    """
-    :param articles_data: dict
-    :return: tuple: articles, last_id, total
-    """
-    try:
-        account_articles = ArticlesResponseShema(**articles_data)
-    except (ValueError, OverflowError, TypeError) as e:
-        raise Exception(e)
-    return ([p.offer_id for p in account_articles.result.items],
-            account_articles.result.last_id,
-            account_articles.result.total)
-
 async def parse_remainders(remainings_data: list) -> list:
     if remainings_data:
         return [Remainder(**r) for r in remainings_data]
@@ -278,3 +266,7 @@ async def check_orders_titles(table_date: list[list]):
     titles = [f[0] for f in table_date]
 
     return titles
+
+async def parse_cache(cache: str | None, obj_type: Type[Any]):
+    d = json.loads(cache)
+    return obj_type(**d)

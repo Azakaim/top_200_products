@@ -116,7 +116,7 @@ class PostingRequestSchema(BaseModel):
             order_id=0,
             provider_id=[],
             since="",
-            status_alias=[],
+            status="",
             to="",
             warehouse_id=[]
         ),
@@ -227,7 +227,7 @@ class Result(BaseModel):
 class OzonPostingResponse(BaseModel):
     result: Result = Field(default=None, description="Result containing postings and pagination info")
 
-class OzonAPIError(RuntimeError):
+class APIError(RuntimeError):
     """
     Class for handling errors from the Ozon API.
     :param status: HTTP status code of the error.

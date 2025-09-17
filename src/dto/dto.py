@@ -1,14 +1,12 @@
-from dataclasses import dataclass, asdict, field
-from typing import Literal, Optional, TYPE_CHECKING
+from pydantic import Field, BaseModel
+from typing import Optional
 
-from src.clients.google_sheets.schemas import SheetsValuesOut
-from src.clients.ozon.schemas import Datum, Remainder
+from src.pipeline import PipelineSettings
+from src.schemas.google_sheets_schemas import SheetsValuesOut
+from src.schemas.ozon_schemas import Datum, Remainder
 
-if TYPE_CHECKING:
-    from src.pipeline.pipeline_settings import PipelineSettings # что бы избавиться от подчеркиваний круговой зависимости
 
-@dataclass
-class SheetsData:
+class SheetsData(BaseModel):
     """
     SheetsData:
         Args:
@@ -16,63 +14,58 @@ class SheetsData:
             - extracted_values (list[SheetsValuesOut]): извлечённые данные из листа;
             - table_data_for_backup (dict): данные всей таблицы для бэкапа.
     """
-    existed_sheets: dict[str, str]
+    existed_sheets: dict[str, int]
     extracted_values: list[SheetsValuesOut]
     table_data_for_backup: dict
 
-    def to_dict(self) -> dict:
-        return asdict(self)
+class Item(BaseModel):
+    sku_id: int    # 1990519270
+    title: str     # описание товара
+    price: float   # цена
+    status: str    #"delivering", "cancelled", "delivered", "awaiting_deliver" и тд
+    quantity: int  # количество
 
-@dataclass
-class Item:
-    sku_id: str                  # "1990519270"
-    title: str                   # описание товара
-    price: float                 # цена
-    status: Literal[
-        "delivering", "cancelled", "delivered", "awaiting_deliver"
-    ]
-    quantity: int                 # количество
+class PostingsDataByDeliveryModel(BaseModel):
+    model:Optional[str] = Field(default=str) # acc_name_FBO или acc_name_AI_FBS
+    items: Optional[list[Item]] = Field(default_factory=list)
 
-@dataclass
-class PostingsDataByDeliveryModel:
-    model:Optional[str] = field(default=str) # acc_name_FBO или acc_name_AI_FBS
-    items: Optional[list[Item]] = field(default_factory=list)
+class PostingsProductsCollection(BaseModel):
+    postings_fbs: Optional[PostingsDataByDeliveryModel] = Field(default_factory=PostingsDataByDeliveryModel)
+    postings_fbo: Optional[PostingsDataByDeliveryModel] = Field(default_factory=PostingsDataByDeliveryModel)
 
-@dataclass
-class PostingsProductsCollection:
-    postings_fbs: Optional[PostingsDataByDeliveryModel] = field(default_factory=PostingsDataByDeliveryModel)
-    postings_fbo: Optional[PostingsDataByDeliveryModel] = field(default_factory=PostingsDataByDeliveryModel)
-
-@dataclass
-class MonthlyStats:
+class MonthlyStats(BaseModel):
     month: str
     datum: list[Datum]
 
-@dataclass
-class AccountMonthlyStatsPostingsBase:
-    ctx: "PipelineSettings"
+class AccountMonthlyStatsPostingsBase(BaseModel):
+    ctx: PipelineSettings
 
-@dataclass
+
 class AccountMonthlyStatsRemainders(AccountMonthlyStatsPostingsBase):
     skus: list[int]
     remainders: list[Remainder]
 
-@dataclass
+
 class AccountMonthlyStatsPostings(AccountMonthlyStatsPostingsBase):
     postings: PostingsProductsCollection
 
-@dataclass
+
 class AccountMonthlyStatsAnalytics(AccountMonthlyStatsPostingsBase):
     monthly_analytics: list[MonthlyStats]
 
-@dataclass
+
 class AccountMonthlyStats(AccountMonthlyStatsPostingsBase):
     skus: list[int]
     monthly_analytics: list[MonthlyStats]
 
-@dataclass
+
 class CollectionStats(AccountMonthlyStatsPostingsBase):
-    ctx: "PipelineSettings"
     monthly_analytics: list[MonthlyStats]
     remainders: list[Remainder]
     postings: PostingsProductsCollection
+
+"""
+    для реализации строкового представления класса
+    чтобы пайдентик вместо строки мог реальный класс
+    подставить
+"""

@@ -1,4 +1,4 @@
-from src.clients.ozon.schemas import SellerAccount
+from src.schemas.ozon_schemas import SellerAccount
 
 
 def extract_sellers(client_ids: list,
@@ -12,5 +12,5 @@ def extract_sellers(client_ids: list,
 
     return [
         SellerAccount(api_key=api_keys[i], name=names[i], client_id=client_ids[i])
-        for i in range(len(client_ids)) if client_ids[i] and api_keys[i] and names[i]
+        for i in range(len(client_ids))
     ]

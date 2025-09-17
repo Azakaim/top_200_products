@@ -1,5 +1,4 @@
 import asyncio
-import functools
 import json
 from collections.abc import Callable
 from typing import Any, Optional, Awaitable

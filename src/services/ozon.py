@@ -6,7 +6,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from src.clients.ozon.ozon_bound_client import OzonCliBound
-from src.clients.ozon.schemas import AnalyticsRequestSchema, AnalyticsMetrics, Sort, Remainder
+from src.schemas.ozon_schemas import AnalyticsRequestSchema, AnalyticsMetrics, Sort, Remainder
 from src.dto.dto import PostingsProductsCollection, PostingsDataByDeliveryModel, MonthlyStats
 from src.infrastructure.cache import call_cache, cache
 from src.mappers import parse_postings
@@ -34,15 +34,13 @@ class OzonService(BaseModel):
         skus = await parse_skus(skus_data)
         return skus if skus else []
 
-    @call_cache(cache_cli=cache, key="ozon:postings:PostingsProductsCollection")
-    async def fetch_postings(self, account_name: str, account_id: str, date_since: str, date_to: str) \
+    async def fetch_postings(self, account_name: str, date_since: str, date_to: str) \
             -> PostingsProductsCollection:
         """
         Fetch postings from Ozon API based on delivery way and date range.
 
         :param date_to:
         :param date_since:
-        :param account_id:
         :param account_name:
         :return: List of postings.
         """

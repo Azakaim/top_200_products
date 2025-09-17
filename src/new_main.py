@@ -11,9 +11,7 @@ from google.oauth2.service_account import Credentials
 
 from src.clients.onec.onec_cli import OneCClient
 from src.clients.ozon.ozon_client import OzonClient
-from src.domain.repositories.cache_repo import CacheRepository
 from src.domain.seller_accounts import extract_sellers
-from src.infrastructure.cache import Cache
 from src.mappers import get_week_range
 from src.pipeline.pipeline import run_pipeline
 
@@ -62,12 +60,18 @@ async def main():
     oc_endpoints = proj_settings.ONEC_ENDPOINTS.split(',')
     prod_uid_url = oc_endpoints[0]
     stocks_url = oc_endpoints[1]
-    oc_auth_login = proj_settings.ONEC_AUTH_LOGIN
-    oc_auth_password = proj_settings.ONEC_AUTH_PASS
+    userpass = proj_settings.ONEC_LOGIN_PASS
+    oc_headers = proj_settings.ONEC_HEADERS.split(',')
+    print(oc_headers[0])
+    cont_type_onec_headers = {oc_headers[0].split(':')[0]: oc_headers[0].split(':')[1]}
+    auth_onec = {oc_headers[1].split(':')[0]: oc_headers[1].split(':')[1]}
+    auth_onec.update(cont_type_onec_headers)
     one_c = OneCClient(
         base_url=oc_host,
         prod_uid_url=prod_uid_url,
         stocks_url=stocks_url,
+        headers=auth_onec,
+        userpass=userpass
     )
 
     # Инициализация клиента Google Sheets
@@ -110,8 +114,8 @@ async def main():
                                         api_keys,
                                         names)
 
-    await run_pipeline(s3_cli=s3_cli,
-                       # cache=cache,
+    await run_pipeline(onec=one_c,
+                       s3_cli=s3_cli,
                        ozon_cli=ozon_client,
                        sheets_cli=sheets_client,
                        accounts=extracted_sellers,

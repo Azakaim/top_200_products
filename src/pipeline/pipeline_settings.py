@@ -1,11 +1,8 @@
-from dataclasses import dataclass
 from typing import Optional
 
 from pydantic import BaseModel
 
 from src.clients.ozon.ozon_bound_client import OzonCliBound
-from src.dto.dto import PostingsProductsCollection
-
 
 class PipelineSettings(BaseModel):
     """
@@ -38,10 +35,3 @@ class PipelineCxt(BaseModel):
                                         # иначе ругается тк обычный класс, без pydantic‑схемы
                                         # и он не генерил схему валидации
     }
-
-    @dataclass
-    class AccountStats:
-        context: PipelineSettings
-        postings: PostingsProductsCollection
-    #     remainders: # = acc_remainders[1]
-    #     analytics: # = acc_analytics[1]

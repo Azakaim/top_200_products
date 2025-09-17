@@ -1,15 +1,14 @@
 import asyncio
 import logging
 from typing import Dict, Optional, Any, ClassVar, Callable, Awaitable
-from wsgiref import headers
 
 from more_itertools import chunked
-from pydantic import BaseModel, PrivateAttr, ValidationError
+from pydantic import PrivateAttr, ValidationError
 
-from src.clients.ozon.schemas import (OzonAPIError, PostingRequestSchema, StatusDelivery, SkusRequestShema,
-                                      FilterProducts, FilterPosting, AnalyticsRequestSchema, AnalyticsResponseSchema,
-                                      Datum)
-from src.mappers.transformation_functions import parse_articles, parse_remainders
+from src.schemas.ozon_schemas import (APIError, PostingRequestSchema, StatusDelivery,
+                                      FilterPosting, AnalyticsRequestSchema, AnalyticsResponseSchema,
+                                      Datum, ArticlesResponseShema)
+from src.schemas.ozon_schemas import FilterProducts, SkusRequestShema
 from src.utils.http_base_client import BaseRateLimitedHttpClient
 from src.utils.limiter import RateLimiter, parse_retry_after_seconds
 
@@ -51,6 +50,19 @@ class OzonClient(BaseRateLimitedHttpClient):
             for ep, rps in self._per_endpoint_rps.items():
                 self._limiters[ep] = RateLimiter(rps, 60.0)
 
+    async def __parse_articles(self,articles_data: dict) -> tuple:
+        """
+        :param articles_data: dict
+        :return: tuple: articles, last_id, total
+        """
+        try:
+            account_articles = ArticlesResponseShema(**articles_data)
+        except (ValueError, OverflowError, TypeError) as e:
+            raise Exception(e)
+        return ([p.offer_id for p in account_articles.result.items],
+                account_articles.result.last_id,
+                account_articles.result.total)
+
     async def __build_remain_payload(self, skus: list) -> dict:
         return { "skus": skus }
 
@@ -85,7 +97,7 @@ class OzonClient(BaseRateLimitedHttpClient):
                                       self.products_url,
                                       json=json,
                                       headers=headers)
-            acc_articles, last_id, total = await parse_articles(resp)
+            acc_articles, last_id, total = await self.__parse_articles(resp)
             articles.extend(acc_articles)
             if total < 1000 or len(articles) == total:
                 break
@@ -99,43 +111,6 @@ class OzonClient(BaseRateLimitedHttpClient):
                                            headers,
                                            self.__build_sku_payload)
         return skus
-
-    async def request(self, method: str, endpoint: str, *, json: Optional[dict] = None, headers: Optional[dict]=None) -> Any:
-        limiter = await self._limiter_for(endpoint) # получаем лимитер для данного эндпоинта #TODO: убрать, если не нужно
-        if limiter:
-            await limiter.acquire()
-        # если лимитер не задан, используем дефолтный
-        else:
-            await self._default_limiter.acquire()
-        await self._sem.acquire()
-        try:
-            async for attempt in AsyncRetrying(
-                wait=wait_exponential_jitter(initial=0.5, max=8.0),
-                stop=stop_after_attempt(6),
-                retry=retry_if_exception_type((httpx.TransportError, OzonAPIError)),
-                reraise=True,
-            ):
-                with attempt:
-                    resp = await self._client.request(method, endpoint, json=json, headers=headers)
-                    # 2xx — ок
-                    if 200 <= resp.status_code < 300:
-                        return resp.json()
-                    # 429 — подчиняемся Retry-After и бросаем ретраибл
-                    if resp.status_code == 429:
-                        delay = parse_retry_after_seconds(resp.headers, default=30.5)
-                        await asyncio.sleep(delay)
-                        raise OzonAPIError(resp.status_code, endpoint, resp.text)
-                    if resp.status_code == 401:
-                        # 401 — ошибка авторизации, не ретраим
-                        not_auth = OzonAPIError(resp.status_code, endpoint, resp.text)
-                        return { "error": "Unauthorized", "details": str(not_auth) }
-                    # 5xx — ретраим с экспонентой
-                    if 500 <= resp.status_code < 600 or (resp.status_code == 400):
-                        raise OzonAPIError(resp.status_code, endpoint, resp.text)
-                    # 4xx (кроме 429) — логическая ошибка, не ретраим
-                    raise OzonAPIError(resp.status_code, endpoint, resp.text)
-        finally:
-            self._sem.release()
 
     async def fetch_remainders(self, skus: list[str], headers: Optional[dict]=None):
         bodies = await self.__manage_batches( self.remain_url,

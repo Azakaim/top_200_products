@@ -40,8 +40,8 @@ class Settings(BaseSettings):
 
     ONEC_HOST: str = Field("", env="ONEC_HOST")
     ONEC_ENDPOINTS: str = Field("", env="ONEC_ENDPOINTS")
-    ONEC_AUTH_LOGIN: str = Field("", env="ONEC_AUTH_LOGIN")
-    ONEC_AUTH_PASS: str = Field("", env="ONEC_AUTH_PASS")
+    ONEC_LOGIN_PASS: str = Field("", env="ONEC_LOGIN_PASS")
+    ONEC_HEADERS: str = Field("", env="ONEC_HEADERS")
 
     BUCKET_NAME: str = Field("", env="BUCKET_NAME")
     S3_ACCESS_KEY: str = Field("", env="S3_ACCESS_KEY")

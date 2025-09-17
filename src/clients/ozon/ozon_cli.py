@@ -5,7 +5,8 @@ from typing import Dict, Optional, Any, ClassVar
 from more_itertools import chunked
 from pydantic import BaseModel, PrivateAttr
 
-from src.clients.ozon.schemas import OzonAPIError, PostingRequestSchema, StatusDelivery, Remainder, FilterPosting
+from src.schemas.ozon_schemas import (APIError, PostingRequestSchema,
+                                      StatusDelivery, Remainder, FilterPosting)
 from src.utils.limiter import RateLimiter, parse_retry_after_seconds
 
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential_jitter, stop_after_attempt
@@ -84,7 +85,7 @@ class OzonCli(BaseModel):
             async for attempt in AsyncRetrying(
                 wait=wait_exponential_jitter(initial=0.5, max=8.0),
                 stop=stop_after_attempt(6),
-                retry=retry_if_exception_type((httpx.TransportError, OzonAPIError)),
+                retry=retry_if_exception_type((httpx.TransportError, APIError)),
                 reraise=True,
             ):
                 with attempt:
@@ -96,16 +97,16 @@ class OzonCli(BaseModel):
                     if resp.status_code == 429:
                         delay = parse_retry_after_seconds(resp.headers, default=1.5)
                         await asyncio.sleep(delay)
-                        raise OzonAPIError(resp.status_code, endpoint, resp.text)
+                        raise APIError(resp.status_code, endpoint, resp.text)
                     if resp.status_code == 401:
                         # 401 — ошибка авторизации, не ретраим
-                        not_auth = OzonAPIError(resp.status_code, endpoint, resp.text)
+                        not_auth = APIError(resp.status_code, endpoint, resp.text)
                         return { "error": "Unauthorized", "details": str(not_auth) }
                     # 5xx — ретраим с экспонентой
                     if 500 <= resp.status_code < 600:
-                        raise OzonAPIError(resp.status_code, endpoint, resp.text)
+                        raise APIError(resp.status_code, endpoint, resp.text)
                     # 4xx (кроме 429) — логическая ошибка, не ретраим
-                    raise OzonAPIError(resp.status_code, endpoint, resp.text)
+                    raise APIError(resp.status_code, endpoint, resp.text)
         finally:
             self._sem.release()
 

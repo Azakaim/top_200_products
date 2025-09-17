@@ -3,9 +3,9 @@ from typing import Any, List
 from pydantic import BaseModel,  PrivateAttr
 
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build, Resource
+from googleapiclient.discovery import build
 
-from src.clients.google_sheets.schemas import SheetsValuesInTo, Body, SheetsValuesOut, BatchUpdateFormat, \
+from src.schemas.google_sheets_schemas import Body, BatchUpdateFormat, \
     Properties, AddSheet, BatchUpdateValues, ResponseSchemaTableData
 
 

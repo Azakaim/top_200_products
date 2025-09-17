@@ -1,7 +1,6 @@
 from enum import StrEnum
-from typing import List, Optional, Literal, Final, Tuple, Any, Union
-from pydantic import BaseModel, Field, AliasChoices, field_validator, PrivateAttr
-
+from typing import List, Optional, Literal, Any, Union
+from pydantic import BaseModel, Field, AliasChoices
 
 
 class SheetsValues(BaseModel):
@@ -156,23 +155,6 @@ class FieldPath(StrEnum):
     HORIZONTAL_ALIGNMENT = "userEnteredFormat.horizontalAlignment"
     VERTICAL_ALIGNMENT = "userEnteredFormat.verticalAlignment"
     WRAP_STRATEGY = "userEnteredFormat.wrapStrategy"
-
-# TODO: сделать так, чтобы можно было передавать список полей в RepeatCellRequest
-# FIELD_PATHS: Final[Tuple[str, ...]] = (
-#     "userEnteredFormat.textFormat.bold",
-#     "userEnteredFormat.textFormat.italic",
-#     "userEnteredFormat.textFormat.underline",
-#     "userEnteredFormat.textFormat.strikethrough",
-#     "userEnteredFormat.textFormat.fontFamily",
-#     "userEnteredFormat.textFormat.fontSize",
-#     "userEnteredFormat.textFormat.foregroundColor",
-#     "userEnteredFormat.backgroundColor",
-#     "userEnteredFormat.horizontalAlignment",
-#     "userEnteredFormat.verticalAlignment",
-#     "userEnteredFormat.wrapStrategy",
-# )
-#
-# F= [*FIELD_PATHS]
 
 class RepeatCellRequest(BaseModel):
     range: GridRange

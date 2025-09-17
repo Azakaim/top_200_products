@@ -5,24 +5,24 @@ from botocore.client import BaseClient
 
 from settings import proj_settings
 from src.clients.google_sheets.sheets_cli import SheetsCli
+from src.clients.onec.onec_cli import OneCClient
 from src.clients.ozon.ozon_client import OzonClient
-from src.clients.ozon.schemas import SellerAccount
-from src.infrastructure.cache import Cache
+from src.schemas.ozon_schemas import SellerAccount
 from src.mappers.transformation_functions import collect_stats, enrich_acc_context, \
     remove_archived_skus, check_orders_titles
 from src.pipeline.pipeline_steps import get_sheets_data, get_pipeline_ctx, get_account_postings, \
     get_account_analytics_data, get_account_remainders_skus
 from src.services.backup import BackupService
 from src.services.google_sheets import GoogleSheets
-
+from src.services.onec import OneCService
 
 BASE_TOP_SHEET_TITLES: list[str] = proj_settings.GOOGLE_BASE_TOP_SHEET_TITLES.split(',')
 BASE_SHEETS_TITLES_BY_ACC: list[str] = proj_settings.GOOGLE_BASE_SHEETS_TITLES_BY_ACC.split(',')
 
 log = logging.getLogger("pipeline")
 
-async def run_pipeline(*,s3_cli: BaseClient,
-                       # cache: Cache,
+async def run_pipeline(*,onec: OneCClient,
+                       s3_cli: BaseClient,
                        ozon_cli: OzonClient,
                        sheets_cli: SheetsCli,
                        accounts: list[SellerAccount],
@@ -30,6 +30,9 @@ async def run_pipeline(*,s3_cli: BaseClient,
                        date_to: str,
                        analytics_months: list,
                        bucket_name: str):
+
+    onec_serv = OneCService(cli=onec)
+    await onec_serv.run_pipeline()
 
     # получаем данные из Google Sheets
     google_sheets = GoogleSheets(cli=sheets_cli)
@@ -59,6 +62,7 @@ async def run_pipeline(*,s3_cli: BaseClient,
     postings_tasks = [asyncio.create_task(get_account_postings(ctxt)) for ctxt in pipeline_context]
     remainders_tasks = [asyncio.create_task(get_account_remainders_skus(ctxt)) for ctxt in pipeline_context]
     analytics_tasks = [asyncio.create_task(get_account_analytics_data(ctxt, analytics_months)) for ctxt in pipeline_context]
+    onec_tasks= [asyncio.create_task()]
 
     acc_postings, acc_remainders, all_analytics = await asyncio.gather(
         asyncio.gather(*postings_tasks),

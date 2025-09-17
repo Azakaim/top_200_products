@@ -7,10 +7,10 @@ from google.auth.transport.requests import Request
 from google.oauth2.service_account import Credentials
 
 from settings import proj_settings
-from src.clients.google_sheets.schemas import SheetsValuesOut, ResponseSchemaTableData
 from src.clients.google_sheets.sheets_cli import SheetsCli
 from src.clients.ozon.ozon_cli import OzonCli
-from src.clients.ozon.schemas import OzonAPIError, SellerAccount, Remainder
+from src.schemas.ozon_schemas import APIError, SellerAccount, Remainder
+from src.schemas.google_sheets_schemas import SheetsValuesOut
 from src.services.reports_pipeline import push_to_sheets, PipelineContext, fetch_postings, check_date_update, \
     get_remainders
 
@@ -170,7 +170,7 @@ async def main() -> None:
                                  postings=postings_acc,
                                  remainders=remainders)
 
-    except OzonAPIError as e:
+    except APIError as e:
         print(f"Ошибка при обращении к Ozon API: {e.status} {e.endpoint} - {e.body}")
 
 

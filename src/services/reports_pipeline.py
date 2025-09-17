@@ -5,15 +5,13 @@ from typing import List, Tuple
 
 from pydantic import BaseModel
 
-from src.clients.google_sheets.schemas import SheetsValuesInTo, BatchUpdateFormat, GridRange, Color, TextFormat, \
-    CellFormat, \
-    CellData, FieldPath, RepeatCellRequest, Body, BatchUpdateValues, SheetsValuesOut
+from src.schemas.google_sheets_schemas import BatchUpdateValues, SheetsValuesOut
 from src.clients.google_sheets.sheets_cli import SheetsCli
 from src.clients.ozon.ozon_cli import OzonCli
 
 from dateutil import parser
 
-from src.clients.ozon.schemas import Remainder
+from src.schemas.ozon_schemas import Remainder
 
 
 class PipelineContext(BaseModel):

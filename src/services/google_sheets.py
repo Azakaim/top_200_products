@@ -6,9 +6,9 @@ from pydantic import BaseModel
 
 from dateutil import parser
 
-from src.clients.google_sheets.schemas import SheetsValuesOut, BatchUpdateValues, ResponseSchemaTableData
+from src.schemas.google_sheets_schemas import SheetsValuesOut, BatchUpdateValues, ResponseSchemaTableData
 from src.clients.google_sheets.sheets_cli import SheetsCli
-from src.clients.ozon.schemas import Remainder
+from src.schemas.ozon_schemas import Remainder
 from src.mappers.transformation_functions import create_values_range
 
 
