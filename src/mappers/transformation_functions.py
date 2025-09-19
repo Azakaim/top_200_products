@@ -118,44 +118,6 @@ async def create_values_range(date_since: str,
 
     return values_range
 
-async def parse_postings(postings_data: list[dict]) -> list:
-    """
-    Преобразует данные о доставке в нужный формат.
-
-    :param postings_data: Список данных о доставке.
-    :return: Список преобразованных данных.
-    """
-    posting_items = []
-    for posting in postings_data:
-        status = posting.get("status")
-        if status != 'cancelled':
-            products = posting.get("products", []) or []
-        else:
-            continue
-        if products:
-            # добавляем преобразованные продукты в общий список
-            posting_items.extend([
-                Item(
-                    sku_id=prod.get("sku"),
-                    title=prod.get("name"),
-                    price=prod.get("price"),
-                    status=status,
-                    quantity=prod.get("quantity")
-                )
-                for prod in products if prod.get("sku")
-            ])
-    return posting_items
-
-async def parse_skus(skus_data: list[dict]) -> list:
-    parsed_skus = [ProductInfo(**s) for s in skus_data]
-    skus = [s.sku for s in parsed_skus if s.sku != 0]
-    return skus if skus else []
-
-async def parse_remainders(remainings_data: list) -> list:
-    if remainings_data:
-        return [Remainder(**r) for r in remainings_data]
-    return []
-
 async def collect_stats(acc_postings: AccountMonthlyStatsPostings, acc_remainders: AccountMonthlyStatsRemainders, acc_analytics: AccountMonthlyStatsAnalytics) -> CollectionStats:
     # TODO дособрать логику аккумуляции всего в один объект а не тюплы избавится от множетсва нулей при обращении к индексу элемента
     acc_context, postings, remainders, monthly_analytics = None, None, None, None
@@ -248,10 +210,6 @@ async def is_tuesday_today():
         return True
     return False
 
-async def get_type_func(func):
-    return_type = get_type_hints(func)
-    return return_type.get("return")
-
 async def get_week_range():
     today = date.today()
     monday = today - timedelta(days=1)
@@ -267,6 +225,52 @@ async def check_orders_titles(table_date: list[list]):
 
     return titles
 
-async def parse_cache(cache: str | None, obj_type: Type[Any]):
-    d = json.loads(cache)
-    return obj_type(**d)
+async def parse_obj_by_type_base_cls(obj: str | dict | None, obj_type: Type[Any]):
+    if isinstance(obj, dict):
+        return obj_type(**obj)
+    if isinstance(obj, str):
+        d = json.loads(obj)
+        if isinstance(d, list):
+            if all(isinstance(o, dict) for o in d):
+                return [obj_type(**o) for o in d]
+        elif isinstance(d, dict):
+            return obj_type(**d)
+    return None
+
+async def parse_postings(postings_data: list[dict]) -> list:
+    """
+    Преобразует данные о доставке в нужный формат.
+
+    :param postings_data: Список данных о доставке.
+    :return: Список преобразованных данных.
+    """
+    posting_items = []
+    for posting in postings_data:
+        status = posting.get("status")
+        if status != 'cancelled':
+            products = posting.get("products", []) or []
+        else:
+            continue
+        if products:
+            # добавляем преобразованные продукты в общий список
+            posting_items.extend([
+                Item(
+                    sku_id=prod.get("sku"),
+                    title=prod.get("name"),
+                    price=prod.get("price"),
+                    status=status,
+                    quantity=prod.get("quantity")
+                )
+                for prod in products if prod.get("sku")
+            ])
+    return posting_items
+
+async def parse_skus(skus_data: list[dict]) -> list:
+    parsed_skus = [ProductInfo(**s) for s in skus_data]
+    skus = [s.sku for s in parsed_skus if s.sku != 0]
+    return skus if skus else []
+
+async def parse_remainders(remainings_data: list) -> list:
+    if remainings_data:
+        return [Remainder(**r) for r in remainings_data]
+    return []

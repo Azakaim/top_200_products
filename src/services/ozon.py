@@ -8,7 +8,6 @@ from pydantic import BaseModel
 from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.schemas.ozon_schemas import AnalyticsRequestSchema, AnalyticsMetrics, Sort, Remainder
 from src.dto.dto import PostingsProductsCollection, PostingsDataByDeliveryModel, MonthlyStats
-from src.infrastructure.cache import call_cache, cache
 from src.mappers import parse_postings
 from src.mappers.transformation_functions import parse_skus
 

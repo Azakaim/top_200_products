@@ -1,16 +1,19 @@
 import asyncio
+import json
 
 from src.schemas.google_sheets_schemas import  SheetsValuesOut
 from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.clients.ozon.ozon_client import OzonClient
+from src.schemas.onec_schemas import OneCProductsResults
 from src.schemas.ozon_schemas import SellerAccount
 from src.infrastructure.cache import cache
 from src.mappers import get_converted_date
 from src.dto.dto import SheetsData, AccountMonthlyStatsRemainders, AccountMonthlyStatsPostings, \
     AccountMonthlyStatsAnalytics, PostingsProductsCollection
-from src.mappers.transformation_functions import parse_cache
+from src.mappers.transformation_functions import parse_obj_by_type_base_cls
 from src.pipeline.pipeline_settings import PipelineSettings, PipelineCxt
 from src.services.google_sheets import GoogleSheets
+from src.services.onec import OneCService
 from src.services.ozon import OzonService
 
 
@@ -82,11 +85,21 @@ async def get_pipeline_ctx(ozon_cli: OzonClient,
         pipeline_context.append(pipeline_cli)
     return pipeline_context
 
+async def get_onec_products(onec_serv: OneCService):
+    key_cache = f"common:onec-products:OneCProductByUidResponse"
+    work_cache = await cache.get(key_cache)
+    if work_cache is not None:  # проверка на None потому что мож храниться пустая строка и 0
+        return await parse_obj_by_type_base_cls(work_cache, OneCProductsResults)
+    onec_products = await onec_serv.run_pipeline()
+    # кэшируем
+    await cache.set(key_cache, onec_products.model_dump_json(), ex=86400)
+    return onec_products
+
 async def get_account_analytics_data(context: PipelineCxt, analytics_months: list):
     key_cache = f"{context.cxt_config.account_id}-acc-id:ozon-postings:AccountMonthlyStatsAnalytics"
     work_cache = await cache.get(key_cache)
     if work_cache is not None:  # проверка на None потому что мож храниться пустая строка и 0
-        return await parse_cache(work_cache, AccountMonthlyStatsAnalytics)
+        return await parse_obj_by_type_base_cls(work_cache, AccountMonthlyStatsAnalytics)
     ozon_service = OzonService(cli=context.ozon)
     converted_date_since = await get_converted_date(analytics_months)
     try:
@@ -109,7 +122,7 @@ async def get_account_postings(context: PipelineCxt):
     key_cache = f"{context.cxt_config.account_id}-acc-id:ozon-postings:PostingsProductsCollection"
     work_cache = await cache.get(key_cache)
     if work_cache is not None:  # проверка на None потому что мож храниться пустая строка и 0
-        parsed_cache = await parse_cache(work_cache, PostingsProductsCollection)
+        parsed_cache = await parse_obj_by_type_base_cls(work_cache, PostingsProductsCollection)
         return AccountMonthlyStatsPostings(ctx=context.cxt_config,
                                            postings=parsed_cache)
     ozon_service = OzonService(cli=context.ozon)
@@ -128,7 +141,7 @@ async def get_account_remainders_skus(context: PipelineCxt):
     key_cache = f"{context.cxt_config.account_id}-acc-id:ozon-remainders:AccountMonthlyStatsRemainders"
     work_cache = await cache.get(key_cache)
     if work_cache is not None:
-        return await parse_cache(work_cache, AccountMonthlyStatsRemainders)
+        return await parse_obj_by_type_base_cls(work_cache, AccountMonthlyStatsRemainders)
     ozon_service = OzonService(cli=context.ozon)
     try:
         skus = await ozon_service.collect_skus()

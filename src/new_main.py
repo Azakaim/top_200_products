@@ -62,7 +62,6 @@ async def main():
     stocks_url = oc_endpoints[1]
     userpass = proj_settings.ONEC_LOGIN_PASS
     oc_headers = proj_settings.ONEC_HEADERS.split(',')
-    print(oc_headers[0])
     cont_type_onec_headers = {oc_headers[0].split(':')[0]: oc_headers[0].split(':')[1]}
     auth_onec = {oc_headers[1].split(':')[0]: oc_headers[1].split(':')[1]}
     auth_onec.update(cont_type_onec_headers)
@@ -71,7 +70,9 @@ async def main():
         prod_uid_url=prod_uid_url,
         stocks_url=stocks_url,
         headers=auth_onec,
-        userpass=userpass
+        userpass=userpass,
+        concurrency=100,  # количество параллельных запросов
+        default_rps=5 # 5 запросов в сек от 5 до 10 к 1С
     )
 
     # Инициализация клиента Google Sheets
@@ -82,8 +83,8 @@ async def main():
     sheets_client = SheetsCli(spreadsheet_id=spreadsheet_id,
                               scopes=scopes,
                               path_to_credentials=path_to_credentials,
-                              sheets_base_title=sheets_base_title
-                              )
+                              sheets_base_title=sheets_base_title)
+
     creds = Credentials.from_service_account_file(path_to_credentials,
                                                   scopes=scopes)
 

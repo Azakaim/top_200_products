@@ -11,7 +11,7 @@ from src.schemas.ozon_schemas import SellerAccount
 from src.mappers.transformation_functions import collect_stats, enrich_acc_context, \
     remove_archived_skus, check_orders_titles
 from src.pipeline.pipeline_steps import get_sheets_data, get_pipeline_ctx, get_account_postings, \
-    get_account_analytics_data, get_account_remainders_skus
+    get_account_analytics_data, get_account_remainders_skus, get_onec_products
 from src.services.backup import BackupService
 from src.services.google_sheets import GoogleSheets
 from src.services.onec import OneCService
@@ -32,7 +32,6 @@ async def run_pipeline(*,onec: OneCClient,
                        bucket_name: str):
 
     onec_serv = OneCService(cli=onec)
-    await onec_serv.run_pipeline()
 
     # получаем данные из Google Sheets
     google_sheets = GoogleSheets(cli=sheets_cli)
@@ -59,16 +58,19 @@ async def run_pipeline(*,onec: OneCClient,
                                               date_to=date_to)
 
     # получаем параллельно остатки и доставки с каждого кабинета
-    postings_tasks = [asyncio.create_task(get_account_postings(ctxt)) for ctxt in pipeline_context]
-    remainders_tasks = [asyncio.create_task(get_account_remainders_skus(ctxt)) for ctxt in pipeline_context]
-    analytics_tasks = [asyncio.create_task(get_account_analytics_data(ctxt, analytics_months)) for ctxt in pipeline_context]
-    onec_tasks= [asyncio.create_task()]
+    postings_tasks = [get_account_postings(ctxt) for ctxt in pipeline_context]
+    remainders_tasks = [get_account_remainders_skus(ctxt) for ctxt in pipeline_context]
+    analytics_tasks = [get_account_analytics_data(ctxt, analytics_months) for ctxt in pipeline_context]
+    onec_tasks = [get_onec_products(onec_serv=onec_serv)]
 
-    acc_postings, acc_remainders, all_analytics = await asyncio.gather(
+    acc_postings, acc_remainders, all_analytics, onec_products = await asyncio.gather(
         asyncio.gather(*postings_tasks),
         asyncio.gather(*remainders_tasks),
-        asyncio.gather(*analytics_tasks)
+        asyncio.gather(*analytics_tasks),
+        asyncio.gather(*onec_tasks)
     )
+
+    onec_products_info = [p.data for p in onec_products[0].onec_responses if p.done]
 
     # убираем архивные sku
     await remove_archived_skus(acc_remainders=acc_remainders,
