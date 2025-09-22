@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import tracemalloc
 
 from botocore.client import BaseClient
 
@@ -15,6 +16,9 @@ from src.pipeline.pipeline_steps import get_sheets_data, get_pipeline_ctx, get_a
 from src.services.backup import BackupService
 from src.services.google_sheets import GoogleSheets
 from src.services.onec import OneCService
+
+# считаем сколько памяти занимают вычисления
+tracemalloc.start()
 
 BASE_TOP_SHEET_TITLES: list[str] = proj_settings.GOOGLE_BASE_TOP_SHEET_TITLES.split(',')
 BASE_SHEETS_TITLES_BY_ACC: list[str] = proj_settings.GOOGLE_BASE_SHEETS_TITLES_BY_ACC.split(',')
@@ -77,10 +81,21 @@ async def run_pipeline(*,onec: OneCClient,
                                all_analytics=all_analytics)
 
     # собираем всю инфу о контексте аккаунта, заявках, остатках, аналитике
-    acc_stats = [await collect_stats(p, r, a) for p, r, a in zip(acc_postings, acc_remainders, all_analytics)]
+    acc_stats = [await collect_stats(p, r, a, onec_products_info) for p, r, a in zip(acc_postings, acc_remainders, all_analytics)]
+
+    # TODO: скалькулировать все данные для общей таблицы те сложить все данные всех кабинетов
+
 
     for acc_d in acc_stats:
+        # собираем заголовки дял вспомогательных таблиц отображаемых покабинетно
         acc_d.ctx.clusters_names, acc_d.ctx.sheet_titles = await enrich_acc_context(BASE_TOP_SHEET_TITLES,
                                                                                     acc_d.remainders,
                                                                                     analytics_months)
-        l = ""
+        # TODO: собрать заголовки для общей таблицы чарта товаров
+
+        # TODO: записать данные в общую таблицу
+
+        current, peak = tracemalloc.get_traced_memory()
+        print(f"Текущая память: {current / 1024 / 1024:.2f} MB; Пик: {peak / 1024 / 1024:.2f} MB")
+
+        tracemalloc.stop()

@@ -3,6 +3,7 @@ from typing import Optional
 
 from src.pipeline import PipelineSettings
 from src.schemas.google_sheets_schemas import SheetsValuesOut
+from src.schemas.onec_schemas import OneCProductInfo
 from src.schemas.ozon_schemas import Datum, Remainder
 
 
@@ -58,14 +59,11 @@ class AccountMonthlyStats(AccountMonthlyStatsPostingsBase):
     skus: list[int]
     monthly_analytics: list[MonthlyStats]
 
-
-class CollectionStats(AccountMonthlyStatsPostingsBase):
+class CommonStatsBase(BaseModel):
     monthly_analytics: list[MonthlyStats]
     remainders: list[Remainder]
     postings: PostingsProductsCollection
+    onec_nomenclatures: list[OneCProductInfo]
 
-"""
-    для реализации строкового представления класса
-    чтобы пайдентик вместо строки мог реальный класс
-    подставить
-"""
+class CollectionStats(CommonStatsBase, AccountMonthlyStatsPostingsBase):
+    ...

@@ -149,7 +149,7 @@ async def get_account_remainders_skus(context: PipelineCxt):
     finally:
         pass
     stats_remainders = AccountMonthlyStatsRemainders(ctx=context.cxt_config,
-                                         skus=skus,
-                                         remainders=remainders)
+                                                     skus=skus,
+                                                     remainders=remainders)
     await cache.set(key_cache, stats_remainders.model_dump_json(), ex=86400) # кэш на сутки
     return stats_remainders

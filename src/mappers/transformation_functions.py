@@ -5,10 +5,27 @@ from typing import get_type_hints, Type, Any
 
 import dateparser
 
+from src.schemas.onec_schemas import OneCProductInfo
 from src.schemas.ozon_schemas import ProductInfo, Remainder
 from src.dto.dto import Item, AccountMonthlyStatsRemainders, AccountMonthlyStatsAnalytics, AccountMonthlyStats, \
-    MonthlyStats, AccountMonthlyStatsPostings, CollectionStats
+    MonthlyStats, AccountMonthlyStatsPostings, CollectionStats, CommonStatsBase, PostingsProductsCollection
 
+
+async def collect_common_stats(stats_set: list[CollectionStats]) -> CommonStatsBase:
+    remainders = []
+    postings = PostingsProductsCollection()
+    onec_nomenclatures = []
+    monthly_analytics = []
+    for s in stats_set:
+        remainders.append(s.remainder)
+        postings.postings_fbo.items.extend(s.postings_fbo_items)
+
+    return CommonStatsBase(
+        remainders=remainders,
+        postings=postings,
+        onec_nomenclatures=onec_nomenclatures,
+        monthly_analytics=monthly_analytics
+    )
 
 async def merge_stock_by_cluster(remains: list[dict]):
     clusters = {}
@@ -118,18 +135,32 @@ async def create_values_range(date_since: str,
 
     return values_range
 
-async def collect_stats(acc_postings: AccountMonthlyStatsPostings, acc_remainders: AccountMonthlyStatsRemainders, acc_analytics: AccountMonthlyStatsAnalytics) -> CollectionStats:
-    # TODO дособрать логику аккумуляции всего в один объект а не тюплы избавится от множетсва нулей при обращении к индексу элемента
+async def collect_stats(acc_postings: AccountMonthlyStatsPostings,
+                        acc_remainders: AccountMonthlyStatsRemainders,
+                        acc_analytics: AccountMonthlyStatsAnalytics,
+                        onec_nomenclature: list[OneCProductInfo]) -> CollectionStats:
+    """
+    Функция аккумулирует данные покабинетно в одном объекте
+    """
+    onec_products_info: list[OneCProductInfo] = []
     acc_context, postings, remainders, monthly_analytics = None, None, None, None
     if acc_postings.ctx.account_id == acc_remainders.ctx.account_id == acc_analytics.ctx.account_id:
         acc_context = acc_remainders.ctx
         postings = acc_postings.postings
         remainders = acc_remainders.remainders
         monthly_analytics = acc_analytics.monthly_analytics
+        # собираем все номенклатуры из 1С по соответствиям в ску кабинета
+        for onecp in onec_nomenclature:
+            for o in onecp.skus:
+                if o.sku_fbo and o.sku_fbs:
+                    if (int(o.sku_fbo) or int(o.sku_fbs)) in acc_remainders.skus:
+                        onec_products_info.append(onecp)
+
     return CollectionStats(ctx=acc_context,
                            postings=postings,
                            remainders=remainders,
-                           monthly_analytics=monthly_analytics)
+                           monthly_analytics=monthly_analytics,
+                           onec_nomenclatures=onec_products_info)
 
 async def get_converted_date(analytics_months: list):
     dates = {}
