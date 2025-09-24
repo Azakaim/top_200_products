@@ -10,7 +10,7 @@ from src.clients.onec.onec_cli import OneCClient
 from src.clients.ozon.ozon_client import OzonClient
 from src.schemas.ozon_schemas import SellerAccount
 from src.mappers.transformation_functions import collect_stats, enrich_acc_context, \
-    remove_archived_skus, check_orders_titles
+    remove_archived_skus, check_orders_titles, collect_common_stats
 from src.pipeline.pipeline_steps import get_sheets_data, get_pipeline_ctx, get_account_postings, \
     get_account_analytics_data, get_account_remainders_skus, get_onec_products
 from src.services.backup import BackupService
@@ -25,14 +25,14 @@ BASE_SHEETS_TITLES_BY_ACC: list[str] = proj_settings.GOOGLE_BASE_SHEETS_TITLES_B
 
 log = logging.getLogger("pipeline")
 
-async def run_pipeline(*,onec: OneCClient,
+async def run_pipeline(*, onec: OneCClient,
                        s3_cli: BaseClient,
                        ozon_cli: OzonClient,
                        sheets_cli: SheetsCli,
                        accounts: list[SellerAccount],
                        date_since: str,
                        date_to: str,
-                       analytics_months: list,
+                       analytics_month_names: list,
                        bucket_name: str):
 
     onec_serv = OneCService(cli=onec)
@@ -64,7 +64,7 @@ async def run_pipeline(*,onec: OneCClient,
     # получаем параллельно остатки и доставки с каждого кабинета
     postings_tasks = [get_account_postings(ctxt) for ctxt in pipeline_context]
     remainders_tasks = [get_account_remainders_skus(ctxt) for ctxt in pipeline_context]
-    analytics_tasks = [get_account_analytics_data(ctxt, analytics_months) for ctxt in pipeline_context]
+    analytics_tasks = [get_account_analytics_data(ctxt, analytics_month_names) for ctxt in pipeline_context]
     onec_tasks = [get_onec_products(onec_serv=onec_serv)]
 
     acc_postings, acc_remainders, all_analytics, onec_products = await asyncio.gather(
@@ -84,13 +84,14 @@ async def run_pipeline(*,onec: OneCClient,
     acc_stats = [await collect_stats(p, r, a, onec_products_info) for p, r, a in zip(acc_postings, acc_remainders, all_analytics)]
 
     # TODO: скалькулировать все данные для общей таблицы те сложить все данные всех кабинетов
-
+    # собираем общие данные по компании
+    computed_stats = await collect_common_stats(onec_products_info, acc_stats,len(analytics_month_names))
 
     for acc_d in acc_stats:
         # собираем заголовки дял вспомогательных таблиц отображаемых покабинетно
         acc_d.ctx.clusters_names, acc_d.ctx.sheet_titles = await enrich_acc_context(BASE_TOP_SHEET_TITLES,
                                                                                     acc_d.remainders,
-                                                                                    analytics_months)
+                                                                                    analytics_month_names)
         # TODO: собрать заголовки для общей таблицы чарта товаров
 
         # TODO: записать данные в общую таблицу

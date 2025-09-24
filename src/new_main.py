@@ -122,7 +122,7 @@ async def main():
                        accounts=extracted_sellers,
                        date_since=since,
                        date_to=until,
-                       analytics_months=analytics_months,
+                       analytics_month_names=analytics_months,
                        bucket_name=bucket_name)
 
 if __name__ == "__main__":

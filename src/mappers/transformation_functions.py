@@ -8,24 +8,10 @@ import dateparser
 from src.schemas.onec_schemas import OneCProductInfo
 from src.schemas.ozon_schemas import ProductInfo, Remainder
 from src.dto.dto import Item, AccountMonthlyStatsRemainders, AccountMonthlyStatsAnalytics, AccountMonthlyStats, \
-    MonthlyStats, AccountMonthlyStatsPostings, CollectionStats, CommonStatsBase, PostingsProductsCollection
+    MonthlyStats, AccountMonthlyStatsPostings, CollectionStats, CommonStatsBase, PostingsProductsCollection, \
+    PostingsDataByDeliveryModel, RemaindersByStock
 
-
-async def collect_common_stats(stats_set: list[CollectionStats]) -> CommonStatsBase:
-    remainders = []
-    postings = PostingsProductsCollection()
-    onec_nomenclatures = []
-    monthly_analytics = []
-    for s in stats_set:
-        remainders.append(s.remainder)
-        postings.postings_fbo.items.extend(s.postings_fbo_items)
-
-    return CommonStatsBase(
-        remainders=remainders,
-        postings=postings,
-        onec_nomenclatures=onec_nomenclatures,
-        monthly_analytics=monthly_analytics
-    )
+import csv
 
 async def merge_stock_by_cluster(remains: list[dict]):
     clusters = {}
@@ -305,3 +291,72 @@ async def parse_remainders(remainings_data: list) -> list:
     if remainings_data:
         return [Remainder(**r) for r in remainings_data]
     return []
+
+async def collect_common_stats(onec_products_info: list[OneCProductInfo], stats_set: list[CollectionStats], months_counter: int) -> CommonStatsBase:
+    remainders = []
+    monthly_analytics = []
+    remainders_by_warehouse = []
+    postings = PostingsProductsCollection()
+    postings.postings_fbs = PostingsDataByDeliveryModel(model="FBS")
+    postings.postings_fbo = PostingsDataByDeliveryModel(model="FBO")
+    for s in stats_set:
+        # собираем всю аналитику в один список monthly_analytics
+        await collect_common_analytics_by_month(monthly_analytics, s.monthly_analytics, months_counter)
+        # собираем все остатки в один список
+        remainders.extend(s.remainders)
+        # собираем все доставки в один объект
+        postings.postings_fbs.items.extend(s.postings.postings_fbs.items)
+        postings.postings_fbo.items.extend(s.postings.postings_fbo.items)
+
+    # сортируем remainders по складу
+    await sort_common_remains_by_warehouse(remainders,remainders_by_warehouse)
+
+    # TODO удалить все это
+    with open("products.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        # Заголовки
+        writer.writerow(["кластер", "ску ","остатки шт"])
+        coommon = []
+        for r in remainders_by_warehouse:
+            coommon.extend([r.warehouse_name])
+            for v in r.remainders:
+                coommon.extend([v.sku, (v.waiting_docs_stock_count + v.valid_stock_count + v.other_stock_count  + v.available_stock_count)])
+                break
+                # coommon.extend([(x.waiting_docs_stock_count + x.valid_stock_count
+                #                  + x.other_stock_count  + x.available_stock_count) for x in r.remainders])
+            writer.writerow(coommon)
+
+    return CommonStatsBase(
+        remainders=remainders,
+        postings=postings,
+        onec_nomenclatures=onec_products_info,
+        monthly_analytics=monthly_analytics
+    )
+
+async def collect_common_analytics_by_month(common_monthly_analytics: list[MonthlyStats],
+                                            acc_monthly_analytics:list[MonthlyStats],
+                                            months_counter: int):
+    for m in acc_monthly_analytics:
+        existing: MonthlyStats = next((d for d in common_monthly_analytics if d.month == m.month),None)
+        if existing is not None:
+            existing.datum.extend(m.datum)
+        elif len(common_monthly_analytics) < months_counter:
+            monthly_analytics = MonthlyStats(month=m.month,datum=m.datum)
+            common_monthly_analytics.append(monthly_analytics)
+
+async def sort_common_remains_by_warehouse(remainings_data: list[Remainder], collected_remainders: list[RemaindersByStock]) :
+    cluster_names = list(set([cn.cluster_name for cn in remainings_data]))
+    await merge_unique_warehouse(cluster_names, collected_remainders)
+
+    for i, rem in enumerate(remainings_data):
+        all_remainders_by_sku = [r for r in remainings_data if r.cluster_name == rem.cluster_name]
+        required_stock = next((cr for cr in collected_remainders if cr.warehouse_name == rem.cluster_name), None)
+        required_stock.remainders.extend(all_remainders_by_sku)
+
+async def merge_unique_warehouse(cluster_names: list[str], collected_remainders: list[RemaindersByStock]):
+    if len(collected_remainders) == 0:
+        collected_remainders.extend([RemaindersByStock(warehouse_name=name) for name in cluster_names])
+    if not all(x for x in collected_remainders if x.warehouse_name in cluster_names):
+        required_n = [x.warehouse_name for x in collected_remainders if x.warehouse_name not in cluster_names]
+        for n in required_n:
+            collected_remainders.append(RemaindersByStock(warehouse_name=n))

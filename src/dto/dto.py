@@ -7,6 +7,10 @@ from src.schemas.onec_schemas import OneCProductInfo
 from src.schemas.ozon_schemas import Datum, Remainder
 
 
+class RemaindersByStock(BaseModel):
+    warehouse_name: str = Field(default_factory=str)
+    remainders: list[Remainder] = Field(default_factory=list)
+
 class SheetsData(BaseModel):
     """
     SheetsData:
@@ -27,7 +31,7 @@ class Item(BaseModel):
     quantity: int  # количество
 
 class PostingsDataByDeliveryModel(BaseModel):
-    model:Optional[str] = Field(default=str) # acc_name_FBO или acc_name_AI_FBS
+    model:Optional[str] = Field(default_factory=str) # acc_name_FBO или acc_name_AI_FBS
     items: Optional[list[Item]] = Field(default_factory=list)
 
 class PostingsProductsCollection(BaseModel):
@@ -35,8 +39,8 @@ class PostingsProductsCollection(BaseModel):
     postings_fbo: Optional[PostingsDataByDeliveryModel] = Field(default_factory=PostingsDataByDeliveryModel)
 
 class MonthlyStats(BaseModel):
-    month: str
-    datum: list[Datum]
+    month:Optional[str] = Field(default_factory=str)
+    datum: list[Datum] = Field(default_factory=list)
 
 class AccountMonthlyStatsPostingsBase(BaseModel):
     ctx: PipelineSettings

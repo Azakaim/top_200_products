@@ -1,20 +1,20 @@
-# sheet_titles = ["ID", "Name"]
-# fbs_res = ["a", "b"]
+# sheet_titles = ["ID,Name"]
+# fbs_res = ["a,b"]
 # fbo_res = ["c"]
 #
 # values_range = []
-# values_range.extend([sheet_titles, fbs_res, fbo_res])
+# values_range.extend([sheet_titles fbs_res fbo_res])
 # print(values_range)
-# [['ID', 'Name'], ['a', 'b'], ['c']]
+# [['ID' 'Name'] ['a' 'b'] ['c']]
 # import calendar
 #
 import dateparser
-# from datetime import date, timedelta
+# from datetime import date timedelta
 #
 # # xdate = "Май 2025"
-# # parsed_date_first_date = dateparser.parse(xdate, languages=["ru"], settings={"PREFER_DAY_OF_MONTH": "first"}) # аналитика с первого
-# # parsed_date_last_date = dateparser.parse(xdate, languages=["ru"], settings={"PREFER_DAY_OF_MONTH": "last"}) # аналитика по последний день месяца
-# # print(parsed_date_first_date.date(), parsed_date_last_date.date())
+# # parsed_date_first_date = dateparser.parse(xdate languages=["ru"] settings={"PREFER_DAY_OF_MONTH": "first"}) # аналитика с первого
+# # parsed_date_last_date = dateparser.parse(xdate languages=["ru"] settings={"PREFER_DAY_OF_MONTH": "last"}) # аналитика по последний день месяца
+# # print(parsed_date_first_date.date() parsed_date_last_date.date())
 # # print()
 #
 # today = date.today()
@@ -23,9 +23,11 @@ import dateparser
 #
 # monday = today - timedelta(days=1)
 # week_ago = monday - timedelta(days=6)
-# print(week_ago, monday)
+# print(week_ago monday)
+# 
+# import base64
+# creds = "user:password".encode()
+# token =  base64.b64encode(creds).decode()
+# print(token)
 
-import base64
-creds = "user:password".encode()
-token =  base64.b64encode(creds).decode()
-print(token)
+
