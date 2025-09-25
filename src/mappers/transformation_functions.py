@@ -1,17 +1,16 @@
 import json
 from datetime import datetime, date, timedelta
 from itertools import chain
-from typing import get_type_hints, Type, Any
+from typing import Type, Any
 
 import dateparser
 
 from src.schemas.onec_schemas import OneCProductInfo
 from src.schemas.ozon_schemas import ProductInfo, Remainder
 from src.dto.dto import Item, AccountMonthlyStatsRemainders, AccountMonthlyStatsAnalytics, AccountMonthlyStats, \
-    MonthlyStats, AccountMonthlyStatsPostings, CollectionStats, CommonStatsBase, PostingsProductsCollection, \
-    PostingsDataByDeliveryModel, RemaindersByStock
+    MonthlyStats, AccountMonthlyStatsPostings, CollectionStats, PostingsProductsCollection, \
+    PostingsDataByDeliveryModel, RemaindersByStock, AccountSortedCommonStats, SortedCommonStats
 
-import csv
 
 async def merge_stock_by_cluster(remains: list[dict]):
     clusters = {}
@@ -202,7 +201,6 @@ async def enrich_acc_context(base_sheets_titles: list,
 async def remove_archived_skus(acc_remainders: list[AccountMonthlyStatsRemainders],
                                all_analytics: list[AccountMonthlyStatsAnalytics]):
     # сортируем аналитику и возвраты по кабинетам tuple(контекст, tuple(возвраты, аналитика по месяцам))
-    # data = [AccountMonthlyStats(ctx=r[0],skus=r[2],stats=a[1]) for r, a in zip(acc_remainders, all_analytics) if r[0].account_id == a[0].account_id]
     data = [AccountMonthlyStats(ctx=r.ctx, skus=r.skus, monthly_analytics=a.monthly_analytics) for r, a in zip(acc_remainders, all_analytics) if r.ctx.account_id == a.ctx.account_id]
     for d in data:
         # аналитика по месяцам
@@ -216,10 +214,6 @@ async def remove_archived_skus(acc_remainders: list[AccountMonthlyStatsRemainder
                         if recollected_analytics.datum:
                             x_analytics.monthly_analytics[ind] = recollected_analytics
                             break
-                    #     recollected_analytics = (datum.month,[a for a in prod.datum if int(a.dimensions[0].id) in d.skus and datum.month == prod.month])
-                    #     if recollected_analytics[1]:
-                    #         x_analytics[1][ind] = recollected_analytics
-                    #         break
 
 async def is_tuesday_today():
     today = date.today()
@@ -292,14 +286,18 @@ async def parse_remainders(remainings_data: list) -> list:
         return [Remainder(**r) for r in remainings_data]
     return []
 
-async def collect_common_stats(onec_products_info: list[OneCProductInfo], stats_set: list[CollectionStats], months_counter: int) -> CommonStatsBase:
+async def collect_common_stats(onec_products_info: list[OneCProductInfo],
+                               stats_set: list[CollectionStats],
+                               months_counter: int) -> SortedCommonStats:
     remainders = []
+    sorted_common_stats = []
     monthly_analytics = []
-    remainders_by_warehouse = []
-    postings = PostingsProductsCollection()
-    postings.postings_fbs = PostingsDataByDeliveryModel(model="FBS")
-    postings.postings_fbo = PostingsDataByDeliveryModel(model="FBO")
     for s in stats_set:
+        postings = PostingsProductsCollection()
+        postings.postings_fbs = PostingsDataByDeliveryModel(model="FBS")
+        postings.postings_fbo = PostingsDataByDeliveryModel(model="FBO")
+        # дял сортировки по складам
+        remainders_by_warehouse = []
         # собираем всю аналитику в один список monthly_analytics
         await collect_common_analytics_by_month(monthly_analytics, s.monthly_analytics, months_counter)
         # собираем все остатки в один список
@@ -308,29 +306,18 @@ async def collect_common_stats(onec_products_info: list[OneCProductInfo], stats_
         postings.postings_fbs.items.extend(s.postings.postings_fbs.items)
         postings.postings_fbo.items.extend(s.postings.postings_fbo.items)
 
-    # сортируем remainders по складу
-    await sort_common_remains_by_warehouse(remainders,remainders_by_warehouse)
+        # сортируем remainders по складу
+        await sort_common_remains_by_warehouse(remainders,remainders_by_warehouse)
+        sorted_common_stats.append(AccountSortedCommonStats(
+            remainders_by_stock=remainders_by_warehouse,
+            postings=postings,
+            account_id=s.ctx.account_id,
+            account_name=s.ctx.account_name
+        ))
 
-    # TODO удалить все это
-    with open("products.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        # Заголовки
-        writer.writerow(["кластер", "ску ","остатки шт"])
-        coommon = []
-        for r in remainders_by_warehouse:
-            coommon.extend([r.warehouse_name])
-            for v in r.remainders:
-                coommon.extend([v.sku, (v.waiting_docs_stock_count + v.valid_stock_count + v.other_stock_count  + v.available_stock_count)])
-                break
-                # coommon.extend([(x.waiting_docs_stock_count + x.valid_stock_count
-                #                  + x.other_stock_count  + x.available_stock_count) for x in r.remainders])
-            writer.writerow(coommon)
-
-    return CommonStatsBase(
-        remainders=remainders,
-        postings=postings,
+    return SortedCommonStats(
         onec_nomenclatures=onec_products_info,
-        monthly_analytics=monthly_analytics
+        sorted_stats=sorted_common_stats
     )
 
 async def collect_common_analytics_by_month(common_monthly_analytics: list[MonthlyStats],

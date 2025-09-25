@@ -69,5 +69,15 @@ class CommonStatsBase(BaseModel):
     postings: PostingsProductsCollection
     onec_nomenclatures: list[OneCProductInfo]
 
+class AccountSortedCommonStats(BaseModel):
+    remainders_by_stock: list[RemaindersByStock]
+    postings: PostingsProductsCollection
+    account_name: str
+    account_id: str
+
+class SortedCommonStats(BaseModel):
+    sorted_stats: list[AccountSortedCommonStats]
+    onec_nomenclatures: list[OneCProductInfo]
+
 class CollectionStats(CommonStatsBase, AccountMonthlyStatsPostingsBase):
     ...
