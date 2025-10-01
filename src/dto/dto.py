@@ -70,8 +70,9 @@ class CommonStatsBase(BaseModel):
     onec_nomenclatures: list[OneCProductInfo]
 
 class AccountSortedCommonStats(BaseModel):
-    remainders_by_stock: list[RemaindersByStock]
-    postings: PostingsProductsCollection
+    remainders_by_stock: list[RemaindersByStock] = Field(default_factory=list)
+    posting_items: list[Item] = Field(default_factory=list)
+    monthly_analytics: list[MonthlyStats] = Field(default_factory=list)
     account_name: str
     account_id: str
 

@@ -19,13 +19,13 @@ async def merge_stock_by_cluster(remains: list[dict]):
             clusters[key] = str(int(clusters.get(key, 0)) + int(value))
     return clusters
 
-async def collect_values_range_by_model(date_since: str,
-                                        date_to: str,
-                                        clusters_names: list,
-                                        sheet_titles: list,
-                                        model_name: str,
-                                        model_posting: dict,
-                                        remainders: list=None):
+async def collect_account_sheets_values_range_by_model(date_since: str,
+                                                       date_to: str,
+                                                       clusters_names: list,
+                                                       sheet_titles: list,
+                                                       model_name: str,
+                                                       model_posting: dict,
+                                                       remainders: list=None):
     values_range_by_model = []
     clusters_names = list(set(sheet_titles).intersection(set(clusters_names)))
     try:
@@ -39,7 +39,6 @@ async def collect_values_range_by_model(date_since: str,
                 glued_remains = await merge_stock_by_cluster(remainders_count)
                 # делаем заглушки для складов где товар не продается для корректного пуша в гугл таблицы
                 prepared_remainders = await prepare_warehouse_stubs(glued_remains, clusters_names)
-                print(prepared_remainders)
                 sorted_remainders_by_column_name = await sort_remains_by_cluster_name(clusters_names, prepared_remainders)
                 # расплющиваем в одномерный массив наш список
                 values = ([model_name]
@@ -99,21 +98,21 @@ async def create_values_range(date_since: str,
     fbo_res = []
     fbs_res = []
     if fbo_postings:
-        fbo_res = await collect_values_range_by_model(date_since=date_since,
-                                                      date_to=date_to,
-                                                      clusters_names=clusters_names,
-                                                      sheet_titles=sheet_titles,
-                                                      model_name="FBO",
-                                                      model_posting=fbo_postings,
-                                                      remainders=remainders)
+        fbo_res = await collect_account_sheets_values_range_by_model(date_since=date_since,
+                                                                     date_to=date_to,
+                                                                     clusters_names=clusters_names,
+                                                                     sheet_titles=sheet_titles,
+                                                                     model_name="FBO",
+                                                                     model_posting=fbo_postings,
+                                                                     remainders=remainders)
 
     if fbs_postings:
-        fbs_res = await collect_values_range_by_model(date_since=date_since,
-                                                      date_to=date_to,
-                                                      clusters_names=clusters_names,
-                                                      sheet_titles=sheet_titles,
-                                                      model_name="FBS",
-                                                      model_posting=fbs_postings)
+        fbs_res = await collect_account_sheets_values_range_by_model(date_since=date_since,
+                                                                     date_to=date_to,
+                                                                     clusters_names=clusters_names,
+                                                                     sheet_titles=sheet_titles,
+                                                                     model_name="FBS",
+                                                                     model_posting=fbs_postings)
 
     # добавляем созданные заголовки для таблицы и постинги
     values_range.extend([sheet_titles] + fbs_res + fbo_res)
@@ -157,27 +156,36 @@ async def get_converted_date(analytics_months: list):
         parsed_date_last_date = dateparser.parse(xdate,
                                                  languages=["ru"],
                                                  settings={"PREFER_DAY_OF_MONTH": "last"})
-        dates[_month] = [parsed_date_first_date, parsed_date_last_date]
+        dates[_month] = [parsed_date_first_date,
+                         parsed_date_last_date.replace(hour=23,minute=59,second=59,microsecond=999999)] # до конца дня
     return dates
 
 async def replace_warehouse_name_date(wname: str) -> str:
     return wname.replace("date", datetime.today().date().strftime("%d-%m"))
 
-async def collect_titles(*, base_titles: list[str], clusters_names: list[str], months: list[str]) -> list[str]:
+async def collect_titles(*, base_titles: list[str],
+                         clusters_names: list[str],
+                         months: list[str] = None,
+                         date_since: str = "",
+                         date_to: str = "") -> list[str]:
     # TODO нужно поменять параметр месяцы на недели. важно оставить недели текущего месяца и обновлять при наступлении нового
     base_titles[6] = await replace_warehouse_name_date(base_titles[6])
     base_titles[7] = await replace_warehouse_name_date(base_titles[7])
     rev_months_title = []
     orders_title = []
     # получаем точные даты месяца
-    month_dates = await get_converted_date(months)
-    for m in months:
-        rev_months_title.extend(["Оборот " + m,
-                                "Заказов " + m])
-        orders_title.extend(["Заказы " + month_dates[m.split(' ')[0]][0].strftime("%d-%m"),
-                             "Оборот " + month_dates[m.split(' ')[0]][0].strftime("%d-%m")])
+    if months:
+        for m in months :
+            rev_months_title.extend(["Оборот " + m,
+                                    "Заказов " + m])
+            parsed_date_since = dateparser.parse(date_since).strftime("%d-%m")
+            parsed_date_to = dateparser.parse(date_to).strftime("%d-%m")
+            week_date = f"с {parsed_date_since} по {parsed_date_to}"
+            orders_title.extend(["Заказы " + week_date,
+                                 "Оборот " + week_date])
 
     titles = base_titles[:8] + clusters_names + base_titles[8:9] + rev_months_title + base_titles[9:10] + orders_title + base_titles[10:]
+    print(titles)
     return titles
 
 async def collect_clusters_names(remainders: list[Remainder]):
@@ -188,14 +196,13 @@ async def collect_clusters_names(remainders: list[Remainder]):
     return clusters_names
 
 async def enrich_acc_context(base_sheets_titles: list,
-                             remainders: list[Remainder], months: list[str]):
+                             remainders: list[Remainder]):
     """
     Updated cluster of names, title of sheet
     """
     clusters_names = await collect_clusters_names(remainders=remainders)
     sheet_titles = await collect_titles(base_titles=base_sheets_titles,
-                                        clusters_names=clusters_names,
-                                        months=months)
+                                        clusters_names=clusters_names)
     return clusters_names, sheet_titles
 
 async def remove_archived_skus(acc_remainders: list[AccountMonthlyStatsRemainders],
@@ -290,7 +297,7 @@ async def collect_common_stats(onec_products_info: list[OneCProductInfo],
                                stats_set: list[CollectionStats],
                                months_counter: int) -> SortedCommonStats:
     remainders = []
-    sorted_common_stats = []
+    sorted_common_stats: list[AccountSortedCommonStats]  = []
     monthly_analytics = []
     for s in stats_set:
         postings = PostingsProductsCollection()
@@ -303,14 +310,15 @@ async def collect_common_stats(onec_products_info: list[OneCProductInfo],
         # собираем все остатки в один список
         remainders.extend(s.remainders)
         # собираем все доставки в один объект
-        postings.postings_fbs.items.extend(s.postings.postings_fbs.items)
-        postings.postings_fbo.items.extend(s.postings.postings_fbo.items)
+        posting_items = await sum_postings_by_sku(s.postings.postings_fbs.items +
+                                                  s.postings.postings_fbo.items)
 
         # сортируем remainders по складу
         await sort_common_remains_by_warehouse(remainders,remainders_by_warehouse)
         sorted_common_stats.append(AccountSortedCommonStats(
             remainders_by_stock=remainders_by_warehouse,
-            postings=postings,
+            monthly_analytics=monthly_analytics,
+            posting_items=posting_items,
             account_id=s.ctx.account_id,
             account_name=s.ctx.account_name
         ))
@@ -347,3 +355,37 @@ async def merge_unique_warehouse(cluster_names: list[str], collected_remainders:
         required_n = [x.warehouse_name for x in collected_remainders if x.warehouse_name not in cluster_names]
         for n in required_n:
             collected_remainders.append(RemaindersByStock(warehouse_name=n))
+
+async def sum_postings_by_sku(postings_items: list[Item]) -> list[Item]:
+    items: list[Item] = []
+    for pd in postings_items:
+        if len(items) != 0:
+            el: Item = next((s for s in items if s.sku_id == pd.sku_id), None)
+            if el is not None:
+                el.quantity += pd.quantity
+            else:
+                items.append(pd)
+        else:
+            items.append(pd)
+    return items
+
+async def collect_top_products_sheets_values_range(common_stats: SortedCommonStats,
+                                                   base_top_sheet_titles: list[str],
+                                                   months: list[str],
+                                                   date_since:str,
+                                                   date_to: str):
+    values_for_sheet_top_products = []
+    cluster_names = []
+    for r in common_stats.sorted_stats:
+        acc_clusters_name = [wh_n.warehouse_name for wh_n in r.remainders_by_stock if wh_n.warehouse_name != '']
+        cluster_names.extend(acc_clusters_name)
+    uniq_cluster_names = list(set(cluster_names))
+    title = await collect_titles(base_titles=base_top_sheet_titles,
+                                 clusters_names=uniq_cluster_names,
+                                 months=months,
+                                 date_since=date_since,
+                                 date_to=date_to)
+    values_for_sheet_top_products.append(title)
+    for cs in common_stats.sorted_stats:
+        for nom in common_stats.onec_nomenclatures:
+            ...

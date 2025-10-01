@@ -48,7 +48,7 @@ class BaseRateLimitedHttpClient(BaseModel):
         try:
             async for attempt in AsyncRetrying(
                 wait=wait_exponential_jitter(initial=0.5, max=8.0),
-                stop=stop_after_attempt(6),
+                stop=stop_after_attempt(3),
                 retry=retry_if_exception_type((httpx.TransportError, APIError)),
                 reraise=True,
             ):
@@ -62,10 +62,12 @@ class BaseRateLimitedHttpClient(BaseModel):
                         delay = parse_retry_after_seconds(resp.headers, default=30.5)
                         await asyncio.sleep(delay)
                         raise APIError(resp.status_code, endpoint, resp.text)
+                    if resp.status_code == 400:
+                        # 400 — ошибка авторизации, не ретраим
+                        return  APIError(resp.status_code, endpoint, resp.text)
                     if resp.status_code == 401:
                         # 401 — ошибка авторизации, не ретраим
-                        not_auth = APIError(resp.status_code, endpoint, resp.text)
-                        return { "error": "Unauthorized", "details": str(not_auth) }
+                        return APIError(resp.status_code, endpoint, resp.text)
                     # 5xx — ретраим с экспонентой
                     if 500 <= resp.status_code < 600 or (resp.status_code == 400):
                         raise APIError(resp.status_code, endpoint, resp.text)

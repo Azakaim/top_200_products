@@ -269,7 +269,7 @@ class ArticlesResponseShema(BaseModel):
     result: Products = Field(default_factory=Products, description="Result containing products and pagination info")
 
 class Commission(BaseModel):
-    delivery_amount: int = Field(default_factory=int)
+    delivery_amount: float = Field(default_factory=float)
     percent: float = Field(default_factory=float)
     return_amount: int = Field(default_factory=int)
     sale_schema: str = Field(default_factory=str)

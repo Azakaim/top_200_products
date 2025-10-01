@@ -10,7 +10,7 @@ from src.clients.onec.onec_cli import OneCClient
 from src.clients.ozon.ozon_client import OzonClient
 from src.schemas.ozon_schemas import SellerAccount
 from src.mappers.transformation_functions import collect_stats, enrich_acc_context, \
-    remove_archived_skus, check_orders_titles, collect_common_stats
+    remove_archived_skus, check_orders_titles, collect_common_stats, collect_top_products_sheets_values_range
 from src.pipeline.pipeline_steps import get_sheets_data, get_pipeline_ctx, get_account_postings, \
     get_account_analytics_data, get_account_remainders_skus, get_onec_products
 from src.services.backup import BackupService
@@ -85,18 +85,21 @@ async def run_pipeline(*, onec: OneCClient,
 
     # TODO: скалькулировать все данные для общей таблицы те сложить все данные всех кабинетов
     # собираем общие данные по компании
-    computed_stats = await collect_common_stats(onec_products_info, acc_stats,len(analytics_month_names))
-
+    collected_stats = await collect_common_stats(onec_products_info, acc_stats,len(analytics_month_names))
+    test = await collect_top_products_sheets_values_range(collected_stats,
+                                                          BASE_TOP_SHEET_TITLES,
+                                                          analytics_month_names,
+                                                          date_since,
+                                                          date_to)
     for acc_d in acc_stats:
         # собираем заголовки дял вспомогательных таблиц отображаемых покабинетно
-        acc_d.ctx.clusters_names, acc_d.ctx.sheet_titles = await enrich_acc_context(BASE_TOP_SHEET_TITLES,
-                                                                                    acc_d.remainders,
-                                                                                    analytics_month_names)
+        acc_d.ctx.clusters_names, acc_d.ctx.sheet_titles = await enrich_acc_context(BASE_SHEETS_TITLES_BY_ACC,
+                                                                                    acc_d.remainders)
         # TODO: собрать заголовки для общей таблицы чарта товаров
 
         # TODO: записать данные в общую таблицу
 
-        current, peak = tracemalloc.get_traced_memory()
-        print(f"Текущая память: {current / 1024 / 1024:.2f} MB; Пик: {peak / 1024 / 1024:.2f} MB")
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Текущая память: {current / 1024 / 1024:.2f} MB; Пик: {peak / 1024 / 1024:.2f} MB")
 
-        tracemalloc.stop()
+    tracemalloc.stop()

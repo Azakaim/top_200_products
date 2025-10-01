@@ -127,7 +127,7 @@ class OzonClient(BaseRateLimitedHttpClient):
             try:
                 resp = await self.request("POST", self.analytics_url, json=analyt_body.to_dict(), headers=headers)
                 parsed_resp = AnalyticsResponseSchema(**resp) if resp else None
-            except ValidationError as e:
+            except (ValidationError, TypeError) as e:
                 break
             if parsed_resp:
                 if parsed_resp.result.data:

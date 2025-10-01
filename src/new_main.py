@@ -40,12 +40,6 @@ async def main():
     # месяца сбора аналитики
     analytics_months = proj_settings.ANALYTICS_MONTHS.split(',')
 
-    # инициализация redis
-    # cache = Cache(
-    #     host=proj_settings.REDIS_HOST,
-    #     port=proj_settings.REDIS_PORT,
-    # )
-
     # инициализация s3
     bucket_name = proj_settings.BUCKET_NAME
     s3_cli = boto3.client(
