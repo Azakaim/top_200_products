@@ -23,7 +23,7 @@ class OneCService(BaseModel):
     def model_post_init(self, __context) -> None:
         self.cli.headers['Authorization'] += self.__convert_userpass_base64()
 
-    async def run_pipeline(self) -> OneCProductsResults | None:
+    async def run_onec_pipeline(self) -> tuple[OneCProductsResults, OneCArticlesResponse] | None:
         try:
             resp_to_stock = await self.cli.fetch_stock_prods()
             resp_articles: OneCArticlesResponse = await parse_obj_by_type_base_cls(resp_to_stock, OneCArticlesResponse)
@@ -39,7 +39,7 @@ class OneCService(BaseModel):
                     OneCProductByUidResponse(**art)
                     for art in products # потому что одна задача потому и [0] объект
                 ]
-                return OneCProductsResults(onec_responses=result)
+                return OneCProductsResults(onec_responses=result), resp_articles
         except Exception as e:
             log.info(e)
         finally:

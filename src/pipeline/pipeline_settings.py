@@ -3,7 +3,6 @@ from typing import Optional
 from pydantic import BaseModel
 
 from src.clients.ozon.ozon_bound_client import OzonCliBound
-from src.clients.ozon.ozon_cli import OzonCli
 
 
 class PipelineSettings(BaseModel):
@@ -24,8 +23,8 @@ class PipelineSettings(BaseModel):
     account_id: str
     account_name: str
     account_api_key: str
-    since: str
-    to: str
+    # since: str
+    # to: str
     clear_scope_range: Optional[str] = ""
 
 class PipelineCxt(BaseModel):

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.schemas.ozon_schemas import AnalyticsRequestSchema, AnalyticsMetrics, Sort, Remainder
-from src.dto.dto import PostingsProductsCollection, PostingsDataByDeliveryModel, MonthlyStats
+from src.dto.dto import PostingsProductsCollection, PostingsDataByDeliveryModel, MonthlyStats, Period
 from src.mappers import parse_postings
 from src.mappers.transformation_functions import parse_skus
 
@@ -33,20 +33,20 @@ class OzonService(BaseModel):
         skus = await parse_skus(skus_data)
         return skus if skus else []
 
-    async def fetch_postings(self, account_name: str, date_since: str, date_to: str) \
+    async def fetch_postings(self, account_name: str, period: Period) \
             -> PostingsProductsCollection:
         """
         Fetch postings from Ozon API based on delivery way and date range.
 
-        :param date_to:
-        :param date_since:
+        :param  period : Period
         :param account_name:
         :return: List of postings.
         """
-
         acc_name_fbs = f"{account_name}_FBS"
         acc_name_fbo = f"{account_name}_FBO"
+
         product_collection = PostingsProductsCollection()
+        product_collection.period = period
         product_collection.postings_fbs = PostingsDataByDeliveryModel(
             model=acc_name_fbs
         )
@@ -59,13 +59,13 @@ class OzonService(BaseModel):
             # Получаем отчеты FBS
             self.__collect_reports(reports=product_collection.postings_fbs.items,
                                    gen=self.cli.generate_reports(delivery_way="FBS",
-                                                                 since=date_since,
-                                                                 to=date_to)),
+                                                                 since=period.start_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                                                 to=period.end_date.strftime("%Y-%m-%dT%H:%M:%SZ"))),
             # Получаем отчеты FBO
             self.__collect_reports(reports=product_collection.postings_fbo.items,
-                        gen=self.cli.generate_reports(delivery_way="FBO",
-                                                       since=date_since,
-                                                       to=date_to))
+                                   gen=self.cli.generate_reports(delivery_way="FBO",
+                                                                 since=period.start_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                                                 to=period.end_date.strftime("%Y-%m-%dT%H:%M:%SZ"))),
         ]
         await asyncio.gather(*tasks)
         return product_collection

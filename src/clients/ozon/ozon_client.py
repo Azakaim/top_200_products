@@ -164,7 +164,6 @@ class OzonClient(BaseRateLimitedHttpClient):
             url = self.fbo_reports_url
         offset = 0
         while True:
-            status_delivery = self.STATUS_DELIVERY
             filter_req = FilterPosting(since=since, to=to)
             body_req = PostingRequestSchema(dir="ASC", filter=filter_req, limit=limit, offset=offset)
             # Выполняем запрос к Ozon API

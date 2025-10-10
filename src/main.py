@@ -68,7 +68,7 @@ async def main() -> None:
                            scopes=scopes,
                            path_to_credentials=path_to_credentials)
     creds = Credentials.from_service_account_file(path_to_credentials,
-                                                   scopes=scopes)
+                                                  scopes=scopes)
     creds.refresh(Request())
 
     # Инициализация клиента Ozon API

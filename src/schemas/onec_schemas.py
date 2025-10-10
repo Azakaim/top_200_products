@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -26,16 +28,16 @@ class Sku(BaseModel):
     }
 
 class WareHouse(BaseModel):
-    uid: str
-    name: str
-    quantity: int
+    uid: Optional[str] = Field(default="")
+    name: Optional[str] = Field(default="")
+    quantity: Optional[int] = Field(default_factory=int)
 
 class OneCProductInfo(BaseModel):
-    uid: str
-    article: str
-    name: str
-    stock: list[WareHouse]
-    skus: list[Sku] = Field(default_factory=list, alias="sku")
+    uid: Optional[str] = Field(default="")
+    article: Optional[str] = Field(default="")
+    name: Optional[str] = Field(default="")
+    stock: Optional[list[WareHouse]] = Field(default_factory=list)
+    skus: Optional[list[Sku]] = Field(default_factory=list, alias="sku")
 
     model_config = {
         "populate_by_name": True
@@ -48,3 +50,17 @@ class OneCProductByUidResponse(BaseModel):
 
 class OneCProductsResults(BaseModel):
     onec_responses: list[OneCProductByUidResponse]
+
+class OnecNomenclature(BaseModel):
+    article: Optional[str] = Field(default="")
+    name: Optional[str] = Field(default="")
+    stock: Optional[list[WareHouse]] = Field(default_factory=list)
+    skus: Optional[list[Sku]] = Field(default_factory=list, alias="sku")
+    cost_price_per_one: Optional[float] = Field(default_factory=float)
+
+    model_config = {
+        "populate_by_name": True
+    }
+
+class OneCNomenclatureCollection(BaseModel):
+    onec_products: list[OneCProductInfo]
