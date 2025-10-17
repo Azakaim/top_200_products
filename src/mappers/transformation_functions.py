@@ -3,6 +3,7 @@ from collections import namedtuple
 from datetime import datetime, date, timedelta
 from itertools import chain
 from typing import Type, Any, Literal
+from zoneinfo import ZoneInfo
 
 import dateparser
 from transliterate import translit
@@ -13,7 +14,7 @@ from src.schemas.ozon_schemas import ProductInfo, Remainder, Datum
 from src.dto.dto import Item, AccountStatsRemainders, AccountStatsAnalytics, AccountStats, \
     MonthlyStats, AccountStatsPostings, CollectionStats, PostingsProductsCollection, \
     PostingsDataByDeliveryModel, RemaindersByStock, AccountSortedCommonStats, SortedCommonStats, Period, Interval, \
-    PostingsByPeriod, RemainderBySkuByCluster, ClusterInfo, TurnoverByPeriodSku, ProductsByArticle, AnalyticsSkuByMonths
+    PostingsByPeriod, SkuInfo, ClusterInfo, TurnoverByPeriodSku, ProductsByArticle, AnalyticsSkuByMonths
 
 
 async def merge_stock_by_cluster(remains: list[dict]):
@@ -153,8 +154,8 @@ async def collect_stats(acc_postings: AccountStatsPostings,
 async def get_converted_date(unvalidated_dates: list):
     dates = {}
     if  any(x for x in unvalidated_dates if 'Z' in x):
-        parsed_date_first_date = dateparser.parse(unvalidated_dates[0])
-        parsed_date_last_date = dateparser.parse(unvalidated_dates[1])
+        parsed_date_first_date = dateparser.parse(unvalidated_dates[0]).astimezone(ZoneInfo("Asia/Yekaterinburg"))
+        parsed_date_last_date = dateparser.parse(unvalidated_dates[1]).astimezone(ZoneInfo("Asia/Yekaterinburg"))
         return {
             "first_day": parsed_date_first_date,
             "last_day": parsed_date_last_date
@@ -170,8 +171,10 @@ async def get_converted_date(unvalidated_dates: list):
                                                  languages=["ru"],
                                                  settings={"PREFER_DAY_OF_MONTH": "last"})
 
-        dates[_month] = [parsed_date_first_date,
-                         parsed_date_last_date.replace(hour=23,minute=59,second=59,microsecond=999999)] # до конца дня
+        dates[_month] = [parsed_date_first_date
+                         .astimezone(ZoneInfo("Asia/Yekaterinburg")),
+                         parsed_date_last_date.replace(hour=23,minute=59,second=59,microsecond=999999)
+                         .astimezone(ZoneInfo("Asia/Yekaterinburg"))] # до конца дня
     return dates
 
 async def replace_warehouse_name_date(wname: str) -> str:
@@ -350,7 +353,7 @@ async def parse_remainders(remainings_data: list) -> list:
         return [Remainder(**r) for r in remainings_data]
     return []
 
-async def collect_common_stats(onec_products_info: list[OneCProductInfo],
+async def collect_common_stats(onec_products_info: list[OnecNomenclature],
                                stats_set: list[CollectionStats],
                                months_counter: int) -> SortedCommonStats:
 
@@ -480,11 +483,16 @@ async def collect_top_products_sheets_values_range(common_stats: SortedCommonSta
                                                    months: list[str],
                                                    date_since:str,
                                                    date_to: str):
+    # итоговый лист продуктов по артикулам
+    products_by_article = []
+    lk_names = []
     values_for_sheet_top_products = []
     warehouse_id_to_name = {}
+    all_articles = set()
+
     # получаем id кластеров и имена, инициализируем дикт с ключами id кабинета: имя кластера
     cluster_ids, all_cluster_names = await get_cluster_info(common_stats.sorted_stats,
-                                                        warehouse_id_to_name)
+                                                            warehouse_id_to_name)
     # создаем заголовки дял гугл таблицы
     title = await collect_titles(base_titles=base_top_sheet_titles,
                                  clusters_names=all_cluster_names,
@@ -512,11 +520,11 @@ async def collect_top_products_sheets_values_range(common_stats: SortedCommonSta
                 addition_tittles)
     # объявляем именованный тюпл для сбора объектов для добавления в таблицу
     SheetValue = namedtuple("SheetValue", fields)
-
     for cs in common_stats.sorted_stats:
         remainders_skus_info = await get_remainders_by_sku(all_cluster_names, cs.remainders_by_stock)
         all_articles = {art.article for art in remainders_skus_info}
         lk_name = cs.account_name
+        lk_names.append(lk_name)
         for remainder in remainders_skus_info:
             total_remainder_count = await sum_total_remainder_count_by_cluster(remainder)
             sku = remainder.sku
@@ -533,20 +541,28 @@ async def collect_top_products_sheets_values_range(common_stats: SortedCommonSta
              msk_remainders_quantity,
              cost_price) = await aggregate_onec_info_by_article(sku, common_stats.onec_nomenclatures)
 
-            for i in turnovers_by_periods:
-                print(list(i))
-            ...
+            products_sorted_by_art = [r for r in remainders_skus_info
+                                      if r.article == onec_article
+                                      and sku == r.sku]
+            products_by_article.append(ProductsByArticle(
+                lk_name=lk_name,
+                article=onec_article,
+                remainders_chi6=chi6_remainders_quantity,
+                remainders_msk=msk_remainders_quantity,
+                cost_price=cost_price,
+                total_orders_by_period=postings_quantity_by_period,
+                total_remainder_count_by_clusters=total_remainder_count,
+                products=products_sorted_by_art,
+                analytics_by_sku_by_months=analytics_by_sku_by_months,
+                turnovers_by_periods=turnovers_by_periods
+            ))
+    for article in all_articles:
+        lk_products_by_art = [art for art in products_by_article if article == art.article]
+        for lk_p in lk_products_by_art:
+            print(lk_p)
 
-            for art in all_articles:
-                sorted_by_art = [r for r in remainders_skus_info if r.article == art]
-                ProductsByArticle(
-                    onec_article=onec_article,
-                    remainders_chi6=chi6_remainders_quantity,
-                    remainders_msk=msk_remainders_quantity
 
-                )
-
-async def aggregate_onec_info_by_article(sku: int, onec_nomenclatures: list[OneCProductInfo]):
+async def aggregate_onec_info_by_article(sku: int, onec_nomenclatures: list[OnecNomenclature]):
     """
     :return : onec_article, chi6_remainders_quantity, msk_remainders_quantity
     """
@@ -558,12 +574,13 @@ async def aggregate_onec_info_by_article(sku: int, onec_nomenclatures: list[OneC
                                                                                  "Екатеринбург")
         msk_remainders_quantity = await get_onec_remainders_quantity_by_cluster(onec_info_by_sku.stock,
                                                                                 "Москва")
+        cost_price = onec_info_by_sku.cost_price_per_one
     else:
         onec_article = "соответствие не найдено"
         chi6_remainders_quantity = 0
         msk_remainders_quantity = 0
-    # TODO себестоимость нужно вписать
-    return onec_article, chi6_remainders_quantity, msk_remainders_quantity
+        cost_price = 0
+    return onec_article, chi6_remainders_quantity, msk_remainders_quantity, cost_price
 
 async def get_turnovers_by_periods(sku: int, postings_quantity: int, postings_by_period: PostingsByPeriod):
     postings = postings_by_period.postings
@@ -576,9 +593,7 @@ async def get_turnovers_by_periods(sku: int, postings_quantity: int, postings_by
     period = PeriodInfo(**period.__dict__)
     tbp = TurnoverByPeriodSku(period=period,
                               turnover_by_period=period_turnover if period_turnover else 0)
-    TurnoverByPeriodInfo = namedtuple(
-        "TurnoverByPeriodInfo", tbp.__dict__.keys())
-    return TurnoverByPeriodInfo(**tbp.__dict__)
+    return tbp
 
 async def get_quantity_postings_by_period(sku: int, postings_by_period:  PostingsByPeriod):
     period = postings_by_period.period
@@ -637,7 +652,7 @@ async def unpack_sku_info(skus_info: dict):
                 )
             # собираем список ску инфо с кластерами
             skus_by_cluster.append(
-                RemainderBySkuByCluster(
+                SkuInfo(
                 sku=sku,
                 article=article,
                 prod_name=prod_name,
@@ -651,19 +666,29 @@ async def enrich_sku_info_by_clusters(all_cluster_names: list, sku_info: dict):
             if cluster_name not in v:
                 v[cluster_name] = {"quantity": 0}
 
-async def get_remainders_by_sku(all_cluster_names: list[str], remainder_by_stock: list[RemaindersByStock]) -> list[RemainderBySkuByCluster]:
-    sku_info: dict[int, dict [ str, dict[str, str| int | None] ] ] = {}
+async def get_remainders_by_sku(all_cluster_names: list[str], remainder_by_stock: list[RemaindersByStock]) -> list[SkuInfo]:
+    skus_info: list[SkuInfo] = []
     for rbs in remainder_by_stock:
+        clusters = []
+        ClusterInfo(
+            cluster_name=rbs.warehouse_name,
+            cluster_id=rbs.warehouse_id
+        )
         for r in rbs.remainders:
             # считаем остатки
             q = (r.available_stock_count + r.other_stock_count +
                  r.valid_stock_count + r.waiting_docs_stock_count)
-            await upsert_sku_cluster(sku_info, r, q)
-    await enrich_sku_info_by_clusters(all_cluster_names, sku_info)
-    skus_by_cluster = await unpack_sku_info(sku_info)
-    return skus_by_cluster
+    #TODO доделать так что бы возращасля список ску а не 1 
+    #         skus_info.append(SkuInfo(
+    #             sku=r.sku,
+    #             article=r.article,
+    #             prod_name=r.name,
+    #             clusters_info=)
+    # await enrich_sku_info_by_clusters(all_cluster_names, sku_info)
+    # skus_by_cluster = await unpack_sku_info(sku_info)
+    # return skus_by_cluster
 
-async def get_info_onec_by_sku(sku: int, onec_nomenclatures: list[OneCProductInfo]):
+async def get_info_onec_by_sku(sku: int, onec_nomenclatures: list[OnecNomenclature]):
     for si in onec_nomenclatures:
         if si.article != "":
             check_exist_skus = set()
@@ -682,12 +707,13 @@ async def get_info_onec_by_sku(sku: int, onec_nomenclatures: list[OneCProductInf
                                 skus_by_trading_model.append(s)
             # берем только не пустые ску так как по артикулам мы не сможем корректно сопоставить остатки
             if str(sku) in check_exist_skus:
-                return OneCProductInfo(
+                return OnecNomenclature(
                     article=si.article,
                     name=si.name,
                     stock=[WareHouse(name=w.name, quantity=w.quantity)
                         for w in si.stock],
-                    skus=skus_by_trading_model
+                    skus=skus_by_trading_model,
+                    cost_price_per_one=si.cost_price_per_one
                 )
     return None
 
@@ -716,7 +742,7 @@ async def collect_onec_product_info(onec_products: OneCProductsResults, onec_art
     onec_prods = []
     for nom in onec_articles.data:
         o_pr = [op.data for op in onec_products.onec_responses if nom.article == op.data.article]
-        price_per_one_prod = next((n.summ/n.stock for n in onec_articles.data),None)
+        price_per_one_prod = next((n.summ/n.stock for n in onec_articles.data if n.stock and nom.article == n.article),None)
         for prod in o_pr:
             onec_prods.append(OnecNomenclature(
                 article=prod.article,
@@ -727,7 +753,7 @@ async def collect_onec_product_info(onec_products: OneCProductsResults, onec_art
             ))
     return OneCNomenclatureCollection(onec_products=onec_prods)
 
-async def sum_total_remainder_count_by_cluster(remainder: RemainderBySkuByCluster):
+async def sum_total_remainder_count_by_cluster(remainder: SkuInfo):
     return sum([q.remainders_quantity for q in  remainder.clusters_info])
 
 async def count_postings_quantity(sku: int, postings: list[Item]):
@@ -737,8 +763,6 @@ async def calculate_turnover_by_sku(sku: int, postings_quantity: int,  postings:
     price = next((o.price for o in postings if o.sku_id == sku), None) # берем прайс у любого из ску
     if price is None:
         return None
-    # print(next(x for x in postings if x.sku_id == sku),None)
-    # print(price, postings_quantity)
     turnover = price * postings_quantity
     return turnover if turnover is not None else 0
 

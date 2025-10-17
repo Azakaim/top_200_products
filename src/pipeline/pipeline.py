@@ -81,7 +81,7 @@ async def run_pipeline(*, onec: OneCClient,
     )
 
     # коллектим все продукты из 1С
-    onec_products_info = [p.data for p in onec_products[0].onec_responses if p.done]
+    onec_products_info = [p for p in onec_products[0].onec_products]
 
     # убираем архивные sku
     await remove_archived_skus(acc_remainders=acc_remainders,

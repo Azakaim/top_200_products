@@ -63,4 +63,4 @@ class OnecNomenclature(BaseModel):
     }
 
 class OneCNomenclatureCollection(BaseModel):
-    onec_products: list[OneCProductInfo]
+    onec_products: list[OnecNomenclature]

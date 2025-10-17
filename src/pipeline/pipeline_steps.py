@@ -3,7 +3,7 @@ import asyncio
 from src.schemas.google_sheets_schemas import  SheetsValuesOut
 from src.clients.ozon.ozon_bound_client import OzonCliBound
 from src.clients.ozon.ozon_client import OzonClient
-from src.schemas.onec_schemas import OneCProductsResults
+from src.schemas.onec_schemas import OneCProductsResults, OneCNomenclatureCollection
 from src.schemas.ozon_schemas import SellerAccount
 from src.infrastructure.cache import cache
 from src.dto.dto import SheetsData, AccountStatsRemainders, AccountStatsPostings, \
@@ -80,15 +80,15 @@ async def get_pipeline_ctx(ozon_cli: OzonClient,
     return pipeline_context
 
 async def get_onec_products(onec_serv: OneCService):
-    key_cache = f"common:onec-products:OneCProductByUidResponse"
+    key_cache = f"common:onec-products:OneCNomenclatureCollection"
     work_cache = await cache.get(key_cache)
     if work_cache is not None:  # проверка на None потому что мож храниться пустая строка и 0
-        return await parse_obj_by_type_base_cls(work_cache, OneCProductsResults)
+        return await parse_obj_by_type_base_cls(work_cache, OneCNomenclatureCollection)
     onec_products, onec_articles = await onec_serv.run_onec_pipeline()
     onec_nomenclatures = await collect_onec_product_info(onec_products, onec_articles)
     # кэшируем
-    await cache.set(key_cache, onec_products.model_dump_json(), ex=86400)
-    return onec_products
+    await cache.set(key_cache, onec_nomenclatures.model_dump_json(), ex=86400)
+    return onec_nomenclatures
 
 async def get_account_analytics_data(context: PipelineCxt, periods: list[Period]):
     key_cache = f"{context.cxt_config.account_id}-acc-id:ozon-postings:AccountStatsAnalytics"

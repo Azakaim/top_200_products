@@ -6,7 +6,7 @@ from typing import Optional, NamedTuple
 
 from src.pipeline import PipelineSettings
 from src.schemas.google_sheets_schemas import SheetsValuesOut
-from src.schemas.onec_schemas import OneCProductInfo
+from src.schemas.onec_schemas import OneCProductInfo, OnecNomenclature
 from src.schemas.ozon_schemas import Datum, Remainder
 
 
@@ -79,7 +79,7 @@ class CommonStatsBase(BaseModel):
     monthly_analytics: list[MonthlyStats]
     remainders: list[Remainder]
     postings: list[PostingsProductsCollection]
-    onec_nomenclatures: list[OneCProductInfo]
+    onec_nomenclatures: list[OnecNomenclature]
 
 class PostingsByPeriod(BaseModel):
     postings: list[Item] = Field(default_factory=list)
@@ -96,29 +96,29 @@ class AccountSortedCommonStats(BaseModel):
 
 class SortedCommonStats(BaseModel):
     sorted_stats: list[AccountSortedCommonStats]
-    onec_nomenclatures: list[OneCProductInfo]
+    onec_nomenclatures: list[OnecNomenclature]
 
 class CollectionStats(CommonStatsBase, AccountStatsBase):
     ...
 
 class ClusterInfo(NamedTuple):
-    remainders_quantity: int
     cluster_name: str
     cluster_id: int
+    remainders_quantity: Optional[int] = None
 
-class RemainderBySkuByCluster(NamedTuple):
+class SkuInfo(NamedTuple):
     sku: int
     article: str
     prod_name: str
     clusters_info: list[ClusterInfo]
 
-class TurnoverByPeriodSku:
+class TurnoverByPeriodSku(NamedTuple):
     period: tuple
     turnover_by_period: int | float
 
-    def __init__(self, period: tuple, turnover_by_period: int | float):
-        self.period = period
-        self.turnover_by_period = turnover_by_period
+    # def __init__(self, period: tuple, turnover_by_period: int | float):
+    #     self.period = period
+    #     self.turnover_by_period = turnover_by_period
 
 class AnalyticsSkuByMonths(NamedTuple):
     month: str
@@ -127,12 +127,15 @@ class AnalyticsSkuByMonths(NamedTuple):
     orders_quantity: int
 
 class ProductsByArticle(NamedTuple):
-    onec_article: str
+    lk_name: str
+    article: str
     remainders_chi6: int
     remainders_msk: int
-    cost_price: int
-    total_visitors: int
-    total_turnover_by_article: int
+    cost_price: float
+    # total_visitors: int
+    # total_turnover_by_article: int
+    turnovers_by_periods: list[TurnoverByPeriodSku]
+    analytics_by_sku_by_months: list[AnalyticsSkuByMonths]
     total_remainder_count_by_clusters: int
     total_orders_by_period: list[tuple[Period, int]]
-    products: list[RemainderBySkuByCluster]
+    products: list[SkuInfo]
