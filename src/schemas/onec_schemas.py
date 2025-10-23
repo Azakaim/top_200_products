@@ -62,5 +62,25 @@ class OnecNomenclature(BaseModel):
         "populate_by_name": True
     }
 
+class SkuOneCdata(BaseModel):
+    sku: int = Field(default_factory=int)
+    article: str = Field(default_factory=str)
+    personal_account: str = Field(default_factory=str)
+
+    model_config = {
+        "populate_by_name": True
+    }
+
+class NomenclatureOnecData(BaseModel):
+    article: Optional[str] = Field(default="")
+    name: Optional[str] = Field(default="")
+    stock: Optional[list[WareHouse]] = Field(default_factory=list)
+    skus: Optional[list[Sku]] = Field(default_factory=list)
+    cost_price_per_one: Optional[float] = Field(default_factory=float)
+
+    model_config = {
+        "populate_by_name": True
+    }
+
 class OneCNomenclatureCollection(BaseModel):
-    onec_products: list[OnecNomenclature]
+    onec_products: list[NomenclatureOnecData]

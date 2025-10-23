@@ -1,5 +1,5 @@
 import json
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from datetime import datetime, date, timedelta
 from itertools import chain
 from typing import Type, Any, Literal
@@ -9,7 +9,7 @@ import dateparser
 from transliterate import translit
 
 from src.schemas.onec_schemas import OneCProductInfo, WareHouse, OneCProductsResults, OneCArticlesResponse, \
-    OnecNomenclature, OneCNomenclatureCollection
+    OnecNomenclature, OneCNomenclatureCollection, NomenclatureOnecData
 from src.schemas.ozon_schemas import ProductInfo, Remainder, Datum
 from src.dto.dto import Item, AccountStatsRemainders, AccountStatsAnalytics, AccountStats, \
     MonthlyStats, AccountStatsPostings, CollectionStats, PostingsProductsCollection, \
@@ -739,19 +739,61 @@ async def get_analytics_by_sku(sku: int, months: list, datums: list[MonthlyStats
     return analytics_by_period
 
 async def collect_onec_product_info(onec_products: OneCProductsResults, onec_articles: OneCArticlesResponse ):
-    onec_prods = []
+    # TODO переделать функцию тту 64 000 откуда то растет и неправильная сборка для сортировки
+    # Группировка по платформе и артикулу
+    grouped_data = defaultdict(list)
+
+    for skus_info in onec_products.onec_responses:
+        key = None
+        if len(skus_info.data.skus) == 0:
+            key = skus_info.data.article if skus_info.data.article else f"None_{skus_info.data.uid}"
+            grouped_data[key].append(skus_info.data)
+        for s in skus_info.data.skus:
+            # находим только для Озон связанные артикула ску
+            if "ozon" in s.trading_platform.lower():
+                if skus_info.data.article is not None:
+                    key = skus_info.data.article
+                else:
+                    key = f"None_{skus_info.data.uid}"
+                # убираем все ску связанные с другими мп
+                new_onec_prod_info = await rebuild_onec_pro_info_by_trading_platform(skus_info.data)
+                # добавляем ску по ключу
+                grouped_data[key].append(new_onec_prod_info)
+                break
+
+    # пройдем по номенклатурам соберем ценник/кол-во = себестоимость
+    art_cost_price = defaultdict()
     for nom in onec_articles.data:
-        o_pr = [op.data for op in onec_products.onec_responses if nom.article == op.data.article]
-        price_per_one_prod = next((n.summ/n.stock for n in onec_articles.data if n.stock and nom.article == n.article),None)
-        for prod in o_pr:
-            onec_prods.append(OnecNomenclature(
-                article=prod.article,
-                name=prod.name,
-                stock=prod.stock,
-                skus=prod.skus,
-                cost_price_per_one=price_per_one_prod
-            ))
-    return OneCNomenclatureCollection(onec_products=onec_prods)
+        if not nom.article:
+            key = nom.article if nom.article else f"None_{nom.uid}"
+        else:
+            key = nom.article
+        art_cost_price[key] = nom.summ/nom.stock
+
+    # объединяем словари в объекте номенклатуры собираем в список
+    nomenclatures = []
+    try:
+        for art, cost_p in art_cost_price.items():
+            for onec_prod_i in grouped_data[art]:
+                onec_prod_i: OneCProductInfo
+                nomenclatures.append(NomenclatureOnecData(
+                    article=art,
+                    name=onec_prod_i.name,
+                    stock=onec_prod_i.stock,
+                    skus=onec_prod_i.skus,
+                    cost_price_per_one=cost_p
+                    ))
+    except Exception as e:
+        print(e)
+    return OneCNomenclatureCollection(onec_products=nomenclatures)
+
+async def rebuild_onec_pro_info_by_trading_platform(onec_prod_info: OneCProductInfo ):
+    skus_only_ozon = []
+    for sku in onec_prod_info.skus:
+        if "ozon"in sku.trading_platform.lower():
+            skus_only_ozon.append(sku)
+    onec_prod_info.skus = skus_only_ozon
+    return onec_prod_info
 
 async def sum_total_remainder_count_by_cluster(remainder: SkuInfo):
     return sum([q.remainders_quantity for q in  remainder.clusters_info])
