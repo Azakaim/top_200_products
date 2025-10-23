@@ -9,8 +9,8 @@ import dateparser
 from transliterate import translit
 
 from src.schemas.onec_schemas import OneCProductInfo, WareHouse, OneCProductsResults, OneCArticlesResponse, \
-    OnecNomenclature, OneCNomenclatureCollection, NomenclatureOnecData
-from src.schemas.ozon_schemas import ProductInfo, Remainder, Datum
+    OnecNomenclature, OneCNomenclatureCollection
+from src.schemas.ozon_schemas import ProductInfo, Remainder
 from src.dto.dto import Item, AccountStatsRemainders, AccountStatsAnalytics, AccountStats, \
     MonthlyStats, AccountStatsPostings, CollectionStats, PostingsProductsCollection, \
     PostingsDataByDeliveryModel, RemaindersByStock, AccountSortedCommonStats, SortedCommonStats, Period, Interval, \
@@ -739,7 +739,6 @@ async def get_analytics_by_sku(sku: int, months: list, datums: list[MonthlyStats
     return analytics_by_period
 
 async def collect_onec_product_info(onec_products: OneCProductsResults, onec_articles: OneCArticlesResponse ):
-    # TODO переделать функцию тту 64 000 откуда то растет и неправильная сборка для сортировки
     # Группировка по платформе и артикулу
     grouped_data = defaultdict(list)
 
@@ -776,7 +775,7 @@ async def collect_onec_product_info(onec_products: OneCProductsResults, onec_art
         for art, cost_p in art_cost_price.items():
             for onec_prod_i in grouped_data[art]:
                 onec_prod_i: OneCProductInfo
-                nomenclatures.append(NomenclatureOnecData(
+                nomenclatures.append(OnecNomenclature(
                     article=art,
                     name=onec_prod_i.name,
                     stock=onec_prod_i.stock,

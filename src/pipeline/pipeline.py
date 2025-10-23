@@ -87,6 +87,7 @@ async def run_pipeline(*, onec: OneCClient,
     await remove_archived_skus(acc_remainders=acc_remainders,
                                all_analytics=all_analytics)
 
+    # TODO проверь сегодня все ли ок с данными от 1с
     # собираем всю инфу о контексте аккаунта, заявках, остатках, аналитике
     acc_stats = [await collect_stats(p, r, a, onec_products_info) for p, r, a in zip(all_acc_postings,
                                                                                      acc_remainders,

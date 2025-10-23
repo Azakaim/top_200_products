@@ -83,4 +83,4 @@ class NomenclatureOnecData(BaseModel):
     }
 
 class OneCNomenclatureCollection(BaseModel):
-    onec_products: list[NomenclatureOnecData]
+    onec_products: list[OnecNomenclature]
