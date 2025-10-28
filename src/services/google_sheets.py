@@ -10,7 +10,11 @@ from src.schemas.google_sheets_schemas import SheetsValuesOut, BatchUpdateValues
 from src.clients.google_sheets.sheets_cli import SheetsCli
 from src.schemas.ozon_schemas import Remainder
 from src.mappers.transformation_functions import create_values_range
-
+from src.schemas.google_sheets_schemas import (
+    Body, BatchUpdateFormat, RepeatCellRequest,
+    GridRange, CellData, CellFormat, TextFormat,
+    Color, FieldPath
+)
 
 log = logging.getLogger("google sheet service")
 
@@ -127,6 +131,312 @@ class GoogleSheets(BaseModel):
             raise e
         values = [SheetsValuesOut.model_validate(r) for r in value.valueRanges]
         return values, re if re else None
+
+    async def push_top_products_to_sheet(self,
+                                         sheet_name: str,
+                                         values: list[list]) -> None:
+        """
+        Записывает топ продукты в указанный лист Google Sheets
+
+        :param sheet_name: str - название листа для записи
+        :param values: list[list] - данные для записи (список списков)
+        :return: None
+        """
+        # Проверяем, существует ли лист
+        sheet_exists, sheet_id = await self.check_sheet_exists(title=sheet_name)
+
+        # Если листа нет, создаем его
+        if not sheet_exists:
+            await self.cli.add_list(title=sheet_name)
+            log.info(f"Создан новый лист: {sheet_name}")
+
+        # Подготавливаем данные для записи
+        data = SheetsValuesOut(range=sheet_name, values=values)
+        body_value = BatchUpdateValues(value_input_option="USER_ENTERED", data=[data.model_dump()])
+
+        # Записываем данные в таблицу (с очисткой перед записью)
+        await self.cli.update_table(sheets_values=body_value, range_table=sheet_name)
+        log.info(f"Записано {len(values)} строк в лист '{sheet_name}'")
+
+    async def format_top_products_table(self,
+                                        sheet_name: str,
+                                        values: list[list],
+                                        cluster_count: int) -> None:
+        """
+        Форматирует таблицу Top Products:
+        - Заголовки (строка 0): жирный текст
+        - Строки артикулов: жирный текст + светло-зеленый фон
+        - Колонки складов ЧИ6 и МСК (6-7): желтый фон
+        - Колонки кластеров: синий фон
+
+        :param sheet_name: название листа
+        :param values: данные таблицы
+        :param cluster_count: количество кластеров
+        :return: None
+        """
+
+
+        # Получаем ID листа
+        sheet_exists, sheet_id = await self.check_sheet_exists(title=sheet_name)
+        if not sheet_exists:
+            log.warning(f"Лист '{sheet_name}' не найден, форматирование пропущено")
+            return
+
+        requests = []
+
+        # 1. Форматирование заголовков (строка 0) - жирный текст
+        header_range = GridRange(
+            sheet_id=int(sheet_id),
+            start_row_index=0,
+            end_row_index=1,
+            start_column_index=0,
+            end_column_index=len(values[0]) if values else 20
+        )
+        header_format = CellFormat(
+            text_format=TextFormat(bold=True),
+            horizontal_alignment="CENTER"
+        )
+        header_cell = CellData(user_entered_format=header_format)
+        requests.append(BatchUpdateFormat(
+            repeat_cell=RepeatCellRequest(
+                range=header_range,
+                cell=header_cell,
+                fields=[FieldPath.BOLD, FieldPath.HORIZONTAL_ALIGNMENT]
+            )
+        ))
+
+        # 2. Форматирование колонок складов ЧИ6 и МСК (6-7) - желтый фон для заголовка
+        warehouse_range = GridRange(
+            sheet_id=int(sheet_id),
+            start_row_index=0,
+            end_row_index=1,
+            start_column_index=6,
+            end_column_index=8
+        )
+        warehouse_format = CellFormat(
+            text_format=TextFormat(bold=True),
+            background_color=Color(red=1.0, green=1.0, blue=0.0, alpha=0.3),  # желтый
+            horizontal_alignment="CENTER"
+        )
+        warehouse_cell = CellData(user_entered_format=warehouse_format)
+        requests.append(BatchUpdateFormat(
+            repeat_cell=RepeatCellRequest(
+                range=warehouse_range,
+                cell=warehouse_cell,
+                fields=[FieldPath.BOLD, FieldPath.BACKGROUND_COLOR, FieldPath.HORIZONTAL_ALIGNMENT]
+            )
+        ))
+
+        # 3. Форматирование колонок кластеров (8 до 8+cluster_count) - синий фон для заголовка
+        if cluster_count > 0:
+            cluster_range = GridRange(
+                sheet_id=int(sheet_id),
+                start_row_index=0,
+                end_row_index=1,
+                start_column_index=8,
+                end_column_index=8 + cluster_count
+            )
+            cluster_format = CellFormat(
+                text_format=TextFormat(bold=True),
+                background_color=Color(red=0.0, green=0.5, blue=1.0, alpha=0.3),  # синий
+                horizontal_alignment="CENTER"
+            )
+            cluster_cell = CellData(user_entered_format=cluster_format)
+            requests.append(BatchUpdateFormat(
+                repeat_cell=RepeatCellRequest(
+                    range=cluster_range,
+                    cell=cluster_cell,
+                    fields=[FieldPath.BOLD, FieldPath.BACKGROUND_COLOR, FieldPath.HORIZONTAL_ALIGNMENT]
+                )
+            ))
+
+        # 4. Находим строки артикулов (где первая колонка не пустая и не является заголовком)
+        article_row_indices = []
+        for i, row in enumerate(values):
+            if i == 0:  # Пропускаем заголовок
+                continue
+            # Строка артикула: № п/п не пустой (колонка 0), SKU пустой (колонка 3)
+            if row and str(row[0]).strip() != "" and (len(row) <= 3 or str(row[3]).strip() == ""):
+                article_row_indices.append(i)
+
+        # 5. Форматирование строк артикулов - жирный текст + светло-зеленый фон
+        for row_idx in article_row_indices:
+            article_row_range = GridRange(
+                sheet_id=int(sheet_id),
+                start_row_index=row_idx,
+                end_row_index=row_idx + 1,
+                start_column_index=0,
+                end_column_index=len(values[0]) if values else 20
+            )
+            article_row_format = CellFormat(
+                text_format=TextFormat(bold=True),
+                background_color=Color(red=0.5, green=0.9, blue=0.5, alpha=0.3)  # светло-зеленый
+            )
+            article_row_cell = CellData(user_entered_format=article_row_format)
+            requests.append(BatchUpdateFormat(
+                repeat_cell=RepeatCellRequest(
+                    range=article_row_range,
+                    cell=article_row_cell,
+                    fields=[FieldPath.BOLD, FieldPath.BACKGROUND_COLOR]
+                )
+            ))
+
+        # Отправляем все запросы на форматирование
+        if requests:
+            update_format_data = Body(requests=requests)
+            await self.cli.update_format(update_format_data)
+            log.info(f"Применено {len(requests)} правил форматирования к листу '{sheet_name}'")
+
+    async def push_auxiliary_table_to_sheet(self,
+                                             sheet_name: str,
+                                             values: list[list]) -> None:
+        """
+        Записывает данные вспомогательной таблицы в указанный лист Google Sheets
+
+        :param sheet_name: str - название листа для записи (название кабинета)
+        :param values: list[list] - данные для записи (список списков)
+        :return: None
+        """
+        # Проверяем, существует ли лист
+        sheet_exists, sheet_id = await self.check_sheet_exists(title=sheet_name)
+
+        # Если листа нет, создаем его
+        if not sheet_exists:
+            await self.cli.add_list(title=sheet_name)
+            log.info(f"Создан новый лист: {sheet_name}")
+
+        # Подготавливаем данные для записи
+        data = SheetsValuesOut(range=sheet_name, values=values)
+        body_value = BatchUpdateValues(value_input_option="USER_ENTERED", data=[data.model_dump()])
+
+        # Записываем данные в таблицу (с очисткой перед записью)
+        await self.cli.update_table(sheets_values=body_value, range_table=sheet_name)
+        log.info(f"Записано {len(values)} строк в лист '{sheet_name}'")
+
+    async def format_auxiliary_table(self,
+                                     sheet_name: str,
+                                     values: list[list],
+                                     cluster_count: int) -> None:
+        """
+        Форматирует вспомогательную таблицу по кабинету:
+        - Заголовки (строка 0): жирный текст, серый фон
+        - Колонки базовые (0-5): голубой фон для заголовка
+        - Колонки кластеров (6 до 6+cluster_count): зеленый фон для заголовка
+        - Колонки дат (последние 3): желтый фон для заголовка
+
+        :param sheet_name: название листа
+        :param values: данные таблицы
+        :param cluster_count: количество кластеров
+        :return: None
+        """
+        from src.schemas.google_sheets_schemas import (
+            Body, BatchUpdateFormat, RepeatCellRequest,
+            GridRange, CellData, CellFormat, TextFormat, Color, FieldPath
+        )
+
+        # Получаем ID листа
+        sheet_exists, sheet_id = await self.check_sheet_exists(title=sheet_name)
+        if not sheet_exists:
+            log.warning(f"Лист '{sheet_name}' не найден, форматирование пропущено")
+            return
+
+        requests = []
+        col_count = len(values[0]) if values else 0
+
+        # 1. Форматирование всех заголовков (строка 0) - жирный текст, серый фон
+        header_range = GridRange(
+            sheet_id=int(sheet_id),
+            start_row_index=0,
+            end_row_index=1,
+            start_column_index=0,
+            end_column_index=col_count
+        )
+        header_format = CellFormat(
+            text_format=TextFormat(bold=True),
+            background_color=Color(red=0.85, green=0.85, blue=0.85, alpha=1.0),  # серый
+            horizontal_alignment="CENTER"
+        )
+        header_cell = CellData(user_entered_format=header_format)
+        requests.append(BatchUpdateFormat(
+            repeat_cell=RepeatCellRequest(
+                range=header_range,
+                cell=header_cell,
+                fields=[FieldPath.BOLD, FieldPath.BACKGROUND_COLOR, FieldPath.HORIZONTAL_ALIGNMENT]
+            )
+        ))
+
+        # 2. Форматирование базовых колонок (0-5: Модель, SKU, Наименование, Цена, Статус, В заявке)
+        base_cols_range = GridRange(
+            sheet_id=int(sheet_id),
+            start_row_index=0,
+            end_row_index=1,
+            start_column_index=0,
+            end_column_index=6
+        )
+        base_cols_format = CellFormat(
+            text_format=TextFormat(bold=True),
+            background_color=Color(red=0.6, green=0.8, blue=1.0, alpha=0.5),  # голубой
+            horizontal_alignment="CENTER"
+        )
+        base_cols_cell = CellData(user_entered_format=base_cols_format)
+        requests.append(BatchUpdateFormat(
+            repeat_cell=RepeatCellRequest(
+                range=base_cols_range,
+                cell=base_cols_cell,
+                fields=[FieldPath.BOLD, FieldPath.BACKGROUND_COLOR, FieldPath.HORIZONTAL_ALIGNMENT]
+            )
+        ))
+
+        # 3. Форматирование колонок кластеров (6 до 6+cluster_count) - зеленый фон
+        if cluster_count > 0:
+            cluster_range = GridRange(
+                sheet_id=int(sheet_id),
+                start_row_index=0,
+                end_row_index=1,
+                start_column_index=6,
+                end_column_index=6 + cluster_count
+            )
+            cluster_format = CellFormat(
+                text_format=TextFormat(bold=True),
+                background_color=Color(red=0.5, green=0.9, blue=0.5, alpha=0.5),  # зеленый
+                horizontal_alignment="CENTER"
+            )
+            cluster_cell = CellData(user_entered_format=cluster_format)
+            requests.append(BatchUpdateFormat(
+                repeat_cell=RepeatCellRequest(
+                    range=cluster_range,
+                    cell=cluster_cell,
+                    fields=[FieldPath.BOLD, FieldPath.BACKGROUND_COLOR, FieldPath.HORIZONTAL_ALIGNMENT]
+                )
+            ))
+
+        # 4. Форматирование колонок дат (последние 3: Дата от, Дата до, Дата обновления)
+        dates_range = GridRange(
+            sheet_id=int(sheet_id),
+            start_row_index=0,
+            end_row_index=1,
+            start_column_index=col_count - 3,
+            end_column_index=col_count
+        )
+        dates_format = CellFormat(
+            text_format=TextFormat(bold=True),
+            background_color=Color(red=1.0, green=1.0, blue=0.6, alpha=0.5),  # желтый
+            horizontal_alignment="CENTER"
+        )
+        dates_cell = CellData(user_entered_format=dates_format)
+        requests.append(BatchUpdateFormat(
+            repeat_cell=RepeatCellRequest(
+                range=dates_range,
+                cell=dates_cell,
+                fields=[FieldPath.BOLD, FieldPath.BACKGROUND_COLOR, FieldPath.HORIZONTAL_ALIGNMENT]
+            )
+        ))
+
+        # Отправляем все запросы на форматирование
+        if requests:
+            update_format_data = Body(requests=requests)
+            await self.cli.update_format(update_format_data)
+            log.info(f"Применено {len(requests)} правил форматирования к листу '{sheet_name}'")
 
     async def format_table(self):
         """

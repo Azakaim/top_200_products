@@ -119,5 +119,6 @@ async def main():
                        analytics_month_names=analytics_months,
                        bucket_name=bucket_name)
 
+
 if __name__ == "__main__":
     asyncio.run(main())

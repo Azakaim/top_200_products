@@ -402,11 +402,11 @@ class Dimension(BaseModel):
 
 class Datum(BaseModel):
     dimensions: List[Dimension] = Field(default_factory=list)
-    metrics: List[int] = Field(default_factory=list)
+    metrics: List[int | float] = Field(default_factory=list)
 
 class AnalyticsResult(BaseModel):
     data: List[Datum] = Field(default_factory=list)
-    totals: List[int] = Field(default_factory=list)
+    totals: List[int | float] = Field(default_factory=list)
 
 class AnalyticsResponseSchema(BaseModel):
     result: AnalyticsResult = Field(default_factory=AnalyticsResult)

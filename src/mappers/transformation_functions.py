@@ -14,7 +14,8 @@ from src.schemas.ozon_schemas import ProductInfo, Remainder
 from src.dto.dto import Item, AccountStatsRemainders, AccountStatsAnalytics, AccountStats, \
     MonthlyStats, AccountStatsPostings, CollectionStats, PostingsProductsCollection, \
     PostingsDataByDeliveryModel, RemaindersByStock, AccountSortedCommonStats, SortedCommonStats, Period, Interval, \
-    PostingsByPeriod, SkuInfo, ClusterInfo, TurnoverByPeriodSku, ProductsByArticle, AnalyticsSkuByMonths
+    PostingsByPeriod, SkuInfo, ClusterInfo, TurnoverByPeriodSku, ProductsByArticle, AnalyticsSkuByMonths, \
+    PostingsByPeriodQuantity
 
 
 async def merge_stock_by_cluster(remains: list[dict]):
@@ -142,7 +143,8 @@ async def collect_stats(acc_postings: AccountStatsPostings,
         for onecp in onec_nomenclature:
             for o in onecp.skus:
                 if o.sku_fbo and o.sku_fbs:
-                    if (int(o.sku_fbo) or int(o.sku_fbs)) in acc_remainders.skus:
+                    if (o.sku_fbo and int(o.sku_fbo) in acc_remainders.skus) or \
+                            (o.sku_fbs and int(o.sku_fbs) in acc_remainders.skus):
                         onec_products_info.append(onecp)
 
     return CollectionStats(ctx=acc_context,
@@ -165,10 +167,8 @@ async def get_converted_date(unvalidated_dates: list):
         _month = parts[0] if parts else "some_date"
         # если указан месяц и год
         parsed_date_first_date = dateparser.parse(xdate,
-                                                  languages=["ru"],
                                                   settings={"PREFER_DAY_OF_MONTH": "first"})  # аналитика с первого
         parsed_date_last_date = dateparser.parse(xdate,
-                                                 languages=["ru"],
                                                  settings={"PREFER_DAY_OF_MONTH": "last"})
 
         dates[_month] = [parsed_date_first_date
@@ -358,15 +358,18 @@ async def collect_common_stats(onec_products_info: list[OnecNomenclature],
                                months_counter: int) -> SortedCommonStats:
 
     sorted_common_stats: list[AccountSortedCommonStats]  = []
-    monthly_analytics = []
 
     for s in stats_set:
-        postings = PostingsProductsCollection()
-        postings.postings_fbs = PostingsDataByDeliveryModel(model="FBS")
-        postings.postings_fbo = PostingsDataByDeliveryModel(model="FBO")
         # для сортировки по складам
         remainders_by_warehouse = []
         remainders = []
+        # по месяцам
+        monthly_analytics = []
+
+        postings = PostingsProductsCollection()
+        postings.postings_fbs = PostingsDataByDeliveryModel(model="FBS")
+        postings.postings_fbo = PostingsDataByDeliveryModel(model="FBO")
+
         # собираем всю аналитику в один список monthly_analytics
         await collect_common_analytics_by_month(monthly_analytics, s.monthly_analytics, months_counter)
         # собираем все остатки в один список
@@ -388,7 +391,6 @@ async def collect_common_stats(onec_products_info: list[OnecNomenclature],
             account_id=s.ctx.account_id,
             account_name=s.ctx.account_name
         ))
-
 
     return SortedCommonStats(
         onec_nomenclatures=onec_products_info,
@@ -440,7 +442,7 @@ async def get_cluster_info(sorted_stats: list[AccountSortedCommonStats], warehou
     :return :  cluster_ids , cluster_names
     """
     cluster_ids = set()
-    cluster_names = []
+    cluster_names = {}
     for r in sorted_stats:
         acc_cluster_names = {wh.warehouse_id: wh.warehouse_name for wh in r.remainders_by_stock if wh.warehouse_name not in cluster_ids}
         warehouse_id_to_name.update(acc_cluster_names)
@@ -448,8 +450,9 @@ async def get_cluster_info(sorted_stats: list[AccountSortedCommonStats], warehou
             if k not in cluster_ids:
                 cluster_ids.add(k)
             if n not in cluster_names:
-                cluster_names.append(n)
-    return cluster_ids, cluster_names
+                cluster_names[k] = n
+    sorted(cluster_names)
+    return cluster_ids, [v for _, v in sorted(cluster_names.items())]
 
 async def compare_cluster_to_remainder(names_title: list, wh_id, remainder_quantity: int):
     cl_be_rem = {}
@@ -466,6 +469,7 @@ async def calculate_sku_turnovers_and_postings(sku, postings_by_period: list[Pos
     :return turnovers_by_periods, postings_by_period
     """
     # списки для сбора общего оборота по ску и общ-го кол-ва доставок
+    price = 0
     turnovers_by_periods = []
     postings_quantity_by_period = []
     # перебираем периоды
@@ -473,10 +477,12 @@ async def calculate_sku_turnovers_and_postings(sku, postings_by_period: list[Pos
         postings_quantity = await count_postings_quantity(sku, pbp.postings)
         # оборот за период
         turnover_by_period = await get_turnovers_by_periods(sku, postings_quantity, pbp)
+        if price == 0:
+            price = next((p.price for p in pbp.postings if sku == p.sku_id),0)
         turnovers_by_periods.append(turnover_by_period)
         # доставки за период
-        postings_quantity_by_period.append((pbp.period, postings_quantity))
-    return turnovers_by_periods, postings_quantity_by_period
+        postings_quantity_by_period.append(PostingsByPeriodQuantity(pbp.period, postings_quantity))
+    return turnovers_by_periods, postings_quantity_by_period, price
 
 async def collect_top_products_sheets_values_range(common_stats: SortedCommonStats,
                                                    base_top_sheet_titles: list[str],
@@ -493,7 +499,7 @@ async def collect_top_products_sheets_values_range(common_stats: SortedCommonSta
     # получаем id кластеров и имена, инициализируем дикт с ключами id кабинета: имя кластера
     cluster_ids, all_cluster_names = await get_cluster_info(common_stats.sorted_stats,
                                                             warehouse_id_to_name)
-    # создаем заголовки дял гугл таблицы
+    # создаем заголовки для гугл таблицы
     title = await collect_titles(base_titles=base_top_sheet_titles,
                                  clusters_names=all_cluster_names,
                                  months=months,
@@ -518,49 +524,322 @@ async def collect_top_products_sheets_values_range(common_stats: SortedCommonSta
                 ["dynamics_turnover_by_months"] +
                 orders_columns + ["azp", "onec_zp"] +
                 addition_tittles)
-    # объявляем именованный тюпл для сбора объектов для добавления в таблицу
-    SheetValue = namedtuple("SheetValue", fields)
+    all_articles = {}
+
+    # Оптимизация: создаем словарь для быстрого поиска по артикулам из 1С
+    onec_by_sku = {}
+    for nom in common_stats.onec_nomenclatures:
+        for sku_info in nom.skus:
+            if sku_info.sku_fbo:
+                onec_by_sku[int(sku_info.sku_fbo)] = nom
+            if sku_info.sku_fbs:
+                onec_by_sku[int(sku_info.sku_fbs)] = nom
+
     for cs in common_stats.sorted_stats:
         remainders_skus_info = await get_remainders_by_sku(all_cluster_names, cs.remainders_by_stock)
-        all_articles = {art.article for art in remainders_skus_info}
+        all_articles.update({art.article: art.prod_name for art in remainders_skus_info})
+        # если в 1 с не будет строгого соответствия артикулу
+        all_articles.update({'соответствие не найдено': None})
         lk_name = cs.account_name
         lk_names.append(lk_name)
+
+        # Группируем SKU по артикулам для оптимизации
+        skus_by_article = {}
         for remainder in remainders_skus_info:
-            total_remainder_count = await sum_total_remainder_count_by_cluster(remainder)
-            sku = remainder.sku
-            # берем аналитику по ску
-            analytics_by_sku_by_months = await get_analytics_by_sku(sku, months, cs.monthly_analytics)
+            # Быстрый поиск в словаре вместо вызова aggregate_onec_info_by_article для каждого SKU
+            onec_nom = onec_by_sku.get(remainder.sku)
+            if onec_nom:
+                onec_article = onec_nom.article
+                chi6_remainders_quantity = await get_onec_remainders_quantity_by_cluster(onec_nom.stock, "Екатеринбург")
+                msk_remainders_quantity = await get_onec_remainders_quantity_by_cluster(onec_nom.stock, "Москва")
+                cost_price = onec_nom.cost_price_per_one
+            else:
+                onec_article = "соответствие не найдено"
+                chi6_remainders_quantity = "0"
+                msk_remainders_quantity = "0"
+                cost_price = "0"
 
-            # списки для сбора общего оборота по ску и общ-го кол-ва доставок
-            (turnovers_by_periods ,
-             postings_quantity_by_period) = await calculate_sku_turnovers_and_postings(sku,cs.postings_by_period)
+            # Группируем по артикулу
+            if onec_article not in skus_by_article:
+                skus_by_article[onec_article] = []
+            skus_by_article[onec_article].append(remainder)
 
-            # берем артикул в 1с остатки
-            (onec_article,
-             chi6_remainders_quantity,
-             msk_remainders_quantity,
-             cost_price) = await aggregate_onec_info_by_article(sku, common_stats.onec_nomenclatures)
+        # Теперь обрабатываем сгруппированные данные
+        for onec_article, sku_list in skus_by_article.items():
+            for remainder in sku_list:
+                total_remainder_count = await sum_total_remainder_count_by_cluster(remainder)
+                sku = remainder.sku
 
-            products_sorted_by_art = [r for r in remainders_skus_info
-                                      if r.article == onec_article
-                                      and sku == r.sku]
-            products_by_article.append(ProductsByArticle(
-                lk_name=lk_name,
-                article=onec_article,
-                remainders_chi6=chi6_remainders_quantity,
-                remainders_msk=msk_remainders_quantity,
-                cost_price=cost_price,
-                total_orders_by_period=postings_quantity_by_period,
-                total_remainder_count_by_clusters=total_remainder_count,
-                products=products_sorted_by_art,
-                analytics_by_sku_by_months=analytics_by_sku_by_months,
-                turnovers_by_periods=turnovers_by_periods
-            ))
+                analytics_by_sku_by_months = []
+                try:
+                    # берем аналитику по sku
+                    # аналитика для каждого ску отдает list - заказано на сумму , заказано товаров, уникальные посетители, позиция в выдаче
+                    analytics_by_sku_by_months = await get_analytics_by_sku(sku, months, cs.monthly_analytics)
+                except Exception as e:
+                    print(f"Error getting analytics for SKU {sku}: {e}")
+
+                # списки для сбора общего оборота по sku и общ-го кол-ва доставок
+                (turnovers_by_periods,
+                 postings_quantity_by_period,
+                 price) = await calculate_sku_turnovers_and_postings(sku, cs.postings_by_period)
+
+                # Берем данные из кэша
+                onec_nom = onec_by_sku.get(sku)
+                if onec_nom:
+                    chi6_remainders_quantity = await get_onec_remainders_quantity_by_cluster(onec_nom.stock, "Екатеринбург")
+                    msk_remainders_quantity = await get_onec_remainders_quantity_by_cluster(onec_nom.stock, "Москва")
+                    cost_price = onec_nom.cost_price_per_one
+                else:
+                    chi6_remainders_quantity = "0"
+                    msk_remainders_quantity = "0"
+                    cost_price = "0"
+
+                # Используем предварительно сгруппированные данные
+                products_sorted_by_art = [r for r in remainders_skus_info if r.article == onec_article]
+
+
+                products_by_article.append(ProductsByArticle(
+                    lk_name=lk_name,
+                    article=onec_article,
+                    remainders_chi6=chi6_remainders_quantity,
+                    remainders_msk=msk_remainders_quantity,
+                    cost_price=cost_price,
+                    total_orders_by_period=postings_quantity_by_period,
+                    total_remainder_count_by_clusters=total_remainder_count,
+                    products=products_sorted_by_art,
+                    analytics_by_sku_by_months=analytics_by_sku_by_months,
+                    turnovers_by_periods=turnovers_by_periods
+                ))
+
+    # собираем единый объект для добавления в табл
+    row_number = 1
     for article in all_articles:
         lk_products_by_art = [art for art in products_by_article if article == art.article]
-        for lk_p in lk_products_by_art:
-            print(lk_p)
+        if lk_products_by_art:
+            row_number = await collect_sheets_values(
+                lk_products_by_art,
+                all_articles,
+                values_for_sheet_top_products,
+                row_number,
+                cluster_ids
+            )
 
+    return values_for_sheet_top_products, len(cluster_ids)
+
+async def collect_sheets_values(
+    prod_by_art: list[ProductsByArticle],
+    all_articles: dict,
+    expanded_values: list[list[str]],
+    row_number: int,
+    cluster_ids: set
+) -> int:
+    """
+    Формирует строки для Google таблицы: первая строка - артикул, под ней все SKU
+
+    Args:
+        accordingly_cluster_names_to_ids: словарь соответствий айдишника имени кластера
+        prod_by_art: список продуктов по одному артикулу
+        all_articles: словарь всех артикулов
+        expanded_values: список для добавления строк
+        row_number: текущий номер строки
+        cluster_ids: ID кластеров для формирования колонок остатков
+
+    Returns:
+        int: обновленный номер строки
+    """
+    #TODO № п/п	Артикул ЛК	Артикул 1С	SKU	Наименование	ЛК	Ост. 1С ЧИ6 27-10	Ост. 1С МСК 27-10	Москва, МО и Дальние регионы	Урал	Юг	Воронеж	Сибирь	Ярославль	Казань	Беларусь	Кавказ	Тюмень	Саратов	Уфа	Самара	Дальний Восток	Красноярск	Санкт-Петербург и СЗО	Казахстан	Узбекистан	Калининград	Армения	Кыргызстан	Общий итог	Оборот сентябрь 2025	Заказов сентябрь 2025	Оборот октябрь 2025	Заказов октябрь 2025	Динамика в обороте по ценам	Оборот 20-10 26-10	Заказов 20-10 26-10	ФБС	ФБО	посетители сентябрь 2025	позиция в выдаче сентябрь 2025	посетители октябрь 2025	позиция в выдаче октябрь 2025	АЗП	1CЗП	Комментарии ФБО
+    #TODO 1	03.01.201.002	03.01.201.002		Двигатель бензиновый с электростартером 17 л.с Brait BR445PE , двигатель для мотоблока	AI	41	4	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	1	0	70560.0	70560.0		0	2	2				18900.0	149		0
+    # получается нессотвествие региона и остактка должно быть строк остатки по кластеру обороты так же непраильно записываются как занеделю так и за месяцы . позиццяивыдачи перпутана с оборотом помоему
+
+    # если артикул == соответствие не найдено под ним все ску так же следует собрать
+    if not prod_by_art:
+        return row_number
+
+    # Берем первый продукт для получения общей информации по артикулу
+    first_product = prod_by_art[0]
+    article = first_product.article
+    prod_name = all_articles.get(article, "")
+
+    # Суммарные данные по артикулу для первой строки
+    total_chi6 = sum(p.remainders_chi6 for p in prod_by_art)
+    total_msk = sum(p.remainders_msk for p in prod_by_art)
+    total_cost_price = sum(p.cost_price for p in prod_by_art) / len(prod_by_art) if prod_by_art else 0
+
+    # остакти по кластерам по ску
+    cluster_remainders = {}
+    cluster_remainders_total = {}
+    for cluster_id in cluster_ids:
+        cluster_remainders_total[cluster_id] = 0
+        cluster_remainders[cluster_id] = 0
+
+    # Суммируем остатки по всем SKU артикула
+    for product in prod_by_art:
+        for sku_info in product.products:
+            for cluster_info in sku_info.clusters_info:
+                key = cluster_info.cluster_id
+                if key in cluster_remainders_total:
+                    cluster_remainders[key] = cluster_info.remainders_quantity or 0
+                    cluster_remainders_total[key] += cluster_info.remainders_quantity or 0
+
+    # Суммарный оборот и заказы - используем списки для сохранения порядка TODO тут все неверно нам не нужно так считать данные же уже сть в объекте аналитика
+    # Структура: [(period, turnover, orders), ...]
+    periods_data = []
+    period_map = {}  # {period_str: index}
+
+    for product in prod_by_art:
+        # Сначала обрабатываем обороты
+        for turnover in product.turnovers_by_periods:
+            period_key = turnover.period
+            if period_key not in period_map:
+                period_map[period_key] = len(periods_data)
+                periods_data.append({
+                    'period': turnover.period,
+                    'turnover': turnover.turnover_by_period,
+                    'orders': 0
+                })
+
+            # periods_data[period_map[period_key]]['turnover'] += turnover.turnover_by_period or 0
+
+        # Затем добавляем заказы
+        for period_orders in product.total_orders_by_period:
+            period = period_orders.period
+            if period not in period_map:
+                period_map[period] = len(periods_data)
+                periods_data.append({
+                    'period': period,
+                    'turnover': 0,
+                    'orders': 0
+                })
+            periods_data[period_map[period]]['orders'] += period_orders.quantity
+
+    # Суммарная аналитика (посетители, позиция)
+    total_analytics = {}
+    for product in prod_by_art:
+        for analytics in product.analytics_by_sku_by_months:
+            month = analytics.month
+            if month not in total_analytics:
+                total_analytics[month] = {
+                    "visitors": 0,
+                    "orders_amount": 0,
+                    "orders_quantity": 0,
+                    "search_position": 0
+                }
+            total_analytics[month]["visitors"] += analytics.unique_visitors or 0
+            total_analytics[month]["orders_amount"] += analytics.orders_amount or 0
+            total_analytics[month]["orders_quantity"] += analytics.orders_quantity or 0
+            total_analytics[month]["search_position"] = analytics.search_position or 0
+
+    # Первая строка - данные артикула (агрегированные)
+    article_row = [
+        str(row_number),  # № п/п
+        article,  # Артикул ЛК (может быть пустым для первой строки)
+        article,  # Артикул 1С
+        "",  # SKU (пусто для строки артикула)
+        prod_name,  # Наименование(
+        first_product.lk_name,  # ЛК
+        str(total_chi6),  # Ост. 1С ЧИ6
+        str(total_msk),  # Ост. 1С МСК
+    ]
+
+    # Добавляем остатки по кластерам
+    for cluster_id in sorted(cluster_ids):
+        article_row.append(str(cluster_remainders_total.get(cluster_id, 0)))
+
+    # Общий итог остатков по кластерам
+    total_cluster_remainders = sum(cluster_remainders_total.values())
+    article_row.append(str(total_cluster_remainders))
+
+    # Разделяем периоды на месячные и недельные
+    monthly_periods = [p for p in periods_data if hasattr(p['period'], 'period_type') and p['period'].period_type == Interval.MONTH]
+    weekly_periods = [p for p in periods_data if hasattr(p['period'], 'period_type') and p['period'].period_type == Interval.WEEK]
+
+    # оборот заказов за мес
+    for m_per in monthly_periods:
+        article_row.extend([str(m_per['turnover']), str(m_per['orders'])])
+
+    # Динамика в обороте (можно добавить расчет)
+    article_row.append("")  # TODO: расчет динамика
+
+    # оборот заказов за неделю
+    for w_per in weekly_periods:
+        article_row.extend([str(w_per['turnover']), str(w_per['orders'])])
+
+    # ФБС, ФБО (можно разделить если есть данные)
+    article_row.extend(["", ""])
+
+    for _, ta in sorted(total_analytics.items(),reverse=True):
+        # посестители и выдаче позиция по месяцам если их больше одного
+        article_row.extend([ta['visitors'], ta['search_position']])
+
+    # АЗП (средняя закупочная цена)
+    article_row.append("")  # TODO: расчет АЗП
+
+    # 1CЗП (закупочная цена из 1С)
+    article_row.append(str(round(total_cost_price, 1)))
+
+    # Комментарии
+    article_row.append("")
+
+    expanded_values.append([str(ar) for ar in article_row])
+    row_number += 1
+
+    # Строки для каждого SKU под артикулом
+    for product in prod_by_art:
+        for sku_info in product.products:
+            sku_row = [
+                "",  # № п/п (пусто для строк SKU)
+                "",  # Артикул ЛК
+                "",  # Артикул 1С
+                str(sku_info.sku),  # SKU
+                sku_info.prod_name,  # Наименование
+                product.lk_name,  # ЛК
+                "",  # Ост. 1С ЧИ6
+                "",  # Ост. 1С МСК
+            ]
+
+            # Остатки по кластерам для этого SKU
+            sku_row.extend([str(c) for _, c in sorted(cluster_remainders.items())])
+
+            # Общий итог остатков записывать для одного ску не нужно это нужно только для артикула
+            sku_row.append("")
+
+
+            turnovers_by_weeks = []
+            for product in prod_by_art:
+                for i, turnover in enumerate(product.turnovers_by_periods):
+                    if turnover.period.period_type != Interval.MONTH:
+                        # это идет после колонки динамика поэтому накапливаем отдельно
+                        turnovers_by_weeks.extend([str(turnover.turnover_by_period),
+                                                   str(product.analytics_by_sku_by_months[i - 1].orders_quantity)])
+                    else:
+                        sku_row.extend([str(turnover.turnover_by_period),
+                                       str(product.analytics_by_sku_by_months[i - 1].orders_quantity)])
+            # Динамика
+            sku_row.append("")
+
+            # добавляем неделю продажи
+            sku_row.extend(turnovers_by_weeks)
+
+            # ФБС, ФБО
+            sku_row.extend(["", ""])
+
+            # Аналитика по SKU (посетители, позиция)
+            for analytics in product.analytics_by_sku_by_months:
+                sku_row.extend([str(analytics.unique_visitors), str(analytics.search_position)])# позиция - TODO
+
+            # АЗП, 1CЗП
+            sku_row.append("")
+            sku_row.append(str(round(product.cost_price, 2)))
+
+            # цена товара TODO цену товара к ску инфо прикрутить
+            sku_row.append("")
+
+            # Комментарии
+            sku_row.append("")
+
+            expanded_values.append(sku_row)
+
+    return row_number
 
 async def aggregate_onec_info_by_article(sku: int, onec_nomenclatures: list[OnecNomenclature]):
     """
@@ -587,10 +866,7 @@ async def get_turnovers_by_periods(sku: int, postings_quantity: int, postings_by
     period_turnover = await calculate_turnover_by_sku(sku, postings_quantity, postings)
     period = postings_by_period.period
     # собираем оборот и доставки по определенному периоду
-    # обращаем период в тюпл именованный
-    PeriodInfo = namedtuple(
-        "PeriodInfo", period.__dict__.keys())
-    period = PeriodInfo(**period.__dict__)
+    period = Period(**period.__dict__)
     tbp = TurnoverByPeriodSku(period=period,
                               turnover_by_period=period_turnover if period_turnover else 0)
     return tbp
@@ -660,33 +936,55 @@ async def unpack_sku_info(skus_info: dict):
             ))
     return skus_by_cluster
 
-async def enrich_sku_info_by_clusters(all_cluster_names: list, sku_info: dict):
-    for k, v in sku_info.items():
-        for cluster_name in all_cluster_names:
-            if cluster_name not in v:
-                v[cluster_name] = {"quantity": 0}
+async def enrich_sku_info_by_clusters(all_cluster_names: list, skus_info: dict[int, SkuInfo]):
+    for k, v in skus_info.items():
+        if 2811951731 == k:
+            print()
+        sku_clusters = [cm.cluster_name for cm in v.clusters_info]
+        required_clusters = list(set(all_cluster_names) - set(sku_clusters))
+        v.clusters_info.extend([ClusterInfo(cluster_name=x, remainders_quantity=0) for x in required_clusters])
+
 
 async def get_remainders_by_sku(all_cluster_names: list[str], remainder_by_stock: list[RemaindersByStock]) -> list[SkuInfo]:
-    skus_info: list[SkuInfo] = []
+    """
+        Функция собирает объект SkuInfo который содержит параметры кластера и остатков в нем по sku
+        Оптимизировано: использует defaultdict(list) для группировки кластеров
+    """
+    skus_info: dict[int, dict] = defaultdict(lambda: {"clusters": [], "article": None, "prod_name": None})
+
+    # Собираем информацию о SKU и кластерах за один проход
     for rbs in remainder_by_stock:
-        clusters = []
-        ClusterInfo(
-            cluster_name=rbs.warehouse_name,
-            cluster_id=rbs.warehouse_id
-        )
         for r in rbs.remainders:
-            # считаем остатки
-            q = (r.available_stock_count + r.other_stock_count +
-                 r.valid_stock_count + r.waiting_docs_stock_count)
-    #TODO доделать так что бы возращасля список ску а не 1 
-    #         skus_info.append(SkuInfo(
-    #             sku=r.sku,
-    #             article=r.article,
-    #             prod_name=r.name,
-    #             clusters_info=)
-    # await enrich_sku_info_by_clusters(all_cluster_names, sku_info)
-    # skus_by_cluster = await unpack_sku_info(sku_info)
-    # return skus_by_cluster
+            # Вычисляем остатки один раз
+            total_quantity = (r.available_stock_count + r.other_stock_count +
+                             r.valid_stock_count + r.waiting_docs_stock_count)
+
+            cluster = ClusterInfo(
+                cluster_name=rbs.warehouse_name,
+                cluster_id=rbs.warehouse_id,
+                remainders_quantity=total_quantity
+            )
+
+            sku_data = skus_info[r.sku]
+            if sku_data["article"] is None:
+                sku_data["article"] = r.offer_id
+                sku_data["prod_name"] = r.name
+            sku_data["clusters"].append(cluster)
+
+    # Преобразуем в SkuInfo объекты
+    result = {
+        sku: SkuInfo(
+            sku=sku,
+            article=data["article"],
+            prod_name=data["prod_name"],
+            clusters_info=data["clusters"]
+        )
+        for sku, data in skus_info.items()
+    }
+
+    # Добавляем недостающие кластеры
+    await enrich_sku_info_by_clusters(all_cluster_names, result)
+    return list(result.values())
 
 async def get_info_onec_by_sku(sku: int, onec_nomenclatures: list[OnecNomenclature]):
     for si in onec_nomenclatures:
@@ -694,18 +992,17 @@ async def get_info_onec_by_sku(sku: int, onec_nomenclatures: list[OnecNomenclatu
             check_exist_skus = set()
             skus_by_trading_model = []
             for s in si.skus:
-                if s.trading_platform.lower() == "ozon":
-                        if s.sku_fbo not in check_exist_skus and s.sku_fbo != "":
-                            # добавляем в лист чекер ску
-                            check_exist_skus.add(s.sku_fbo)
-                            # добавляем в лист объекты ску если это тот ску который мы ищем
-                            if str(sku) == s.sku_fbo:
-                                skus_by_trading_model.append(s)
-                        if s.sku_fbs not in check_exist_skus and s.sku_fbs != "":
-                            check_exist_skus.add(s.sku_fbs)
-                            if str(sku) == s.sku_fbs:
-                                skus_by_trading_model.append(s)
-            # берем только не пустые ску так как по артикулам мы не сможем корректно сопоставить остатки
+                if s.sku_fbo not in check_exist_skus and s.sku_fbo != "":
+                    # добавляем в лист чекер ску
+                    check_exist_skus.add(s.sku_fbo)
+                    # добавляем в лист объекты sku если это тот sku который мы ищем
+                    if str(sku) == s.sku_fbo:
+                        skus_by_trading_model.append(s)
+                if s.sku_fbs not in check_exist_skus and s.sku_fbs != "":
+                    check_exist_skus.add(s.sku_fbs)
+                    if str(sku) == s.sku_fbs:
+                        skus_by_trading_model.append(s)
+            # берем только не пустые sku так как по артикулам мы не сможем корректно сопоставить остатки
             if str(sku) in check_exist_skus:
                 return OnecNomenclature(
                     article=si.article,
@@ -722,20 +1019,42 @@ async def get_analytics_by_sku(sku: int, months: list, datums: list[MonthlyStats
     :param sku: int - SKU number
     :param months: list - Months number
     :param datums: list - Datums number
-    :return: list - заказано на сумму , заказано товаров, уникальные посетители
+    :return: list - заказано на сумму , заказано товаров, уникальные посетители, позиция в выдаче
+
+    Оптимизировано: использует словарь для быстрого поиска по месяцам и генератор вместо list comprehension
     """
     analytics_by_period = []
+    sku_str = str(sku)
+
+    # Создаем словарь для быстрого поиска по месяцам (O(1) вместо O(n))
+    datums_by_month = {d.month: d for d in datums}
+
     for m in months:
-        for d in datums:
-            if d.month not in m:
+        _month = m.split(' ')[0]
+        d = datums_by_month.get(_month)
+
+        if d and d.datum:
+            # Используем генератор и next() вместо list comprehension для раннего выхода
+            matching_item = next(
+                (item for item in d.datum if str(item.dimensions[0].id) == sku_str),
+                None
+            )
+
+            if matching_item:
+                analytics_by_period.append(AnalyticsSkuByMonths(
+                    month=m,
+                    orders_amount=matching_item.metrics[0] if len(matching_item.metrics) > 0 else 0,
+                    orders_quantity=matching_item.metrics[1] if len(matching_item.metrics) > 1 else 0,
+                    unique_visitors=matching_item.metrics[2] if len(matching_item.metrics) > 2 else 0,
+                    search_position=matching_item.metrics[3] if len(matching_item.metrics) > 3 else 0,
+                ))
                 continue
-            res = [AnalyticsSkuByMonths(month=m,
-                                        orders_amount=s.metrics[0],
-                                        orders_quantity=s.metrics[1],
-                                        unique_visitors=s.metrics[2])
-                   for s in d.datum if str(s.dimensions[0].id) == str(sku)]
-            if res:
-                analytics_by_period.extend(res)
+
+        # Если данных нет - создаем нулевую запись
+        analytics_by_period.append(AnalyticsSkuByMonths(
+            month=m, orders_amount=0, orders_quantity=0, unique_visitors=0,search_position=0,
+        ))
+
     return analytics_by_period
 
 async def collect_onec_product_info(onec_products: OneCProductsResults, onec_articles: OneCArticlesResponse ):
@@ -825,3 +1144,116 @@ async def get_handling_period(months: list[str] = None) -> Period | list[Period]
         )
         periods.append(period)
     return periods
+
+async def collect_account_auxiliary_table_values(
+    base_titles: list[str],
+    remainders: list[Remainder],
+    postings: list[PostingsProductsCollection],
+    clusters_names: list[str],
+    date_since: str,
+    date_to: str
+) -> list[list]:
+    """
+    Собирает данные для вспомогательной таблицы по кабинету.
+
+    Структура: Модель, SKU, Наименование, Цена, Статус, В заявке, [Кластеры], Дата от, Дата до, Дата обновления
+
+    :param base_titles: базовые заголовки
+    :param remainders: остатки по кабинету
+    :param postings: доставки по кабинету (для получения цены, модели и количества в заявке)
+    :param clusters_names: имена кластеров
+    :param date_since: дата начала периода
+    :param date_to: дата окончания периода
+    :return: список строк для таблицы
+    """
+    # Формируем заголовки: базовые + динамические кластеры + даты
+    headers = (base_titles[:6] + clusters_names +
+               base_titles[6:9])
+
+    values_range = [headers]
+
+    # Собираем информацию из postings: цена, модель доставки, количество в заявке
+    # ВАЖНО: берем только текущий период (неделю), не все периоды
+    postings_info = {}  # {sku: {'price': float, 'model': str, 'in_delivery': int}}
+
+    for posting_collection in postings:
+        # Проверяем, что это текущий период (WEEK)
+        if posting_collection.period and posting_collection.period.period_type == Interval.WEEK:
+            # FBO доставки
+            if posting_collection.postings_fbo and posting_collection.postings_fbo.items:
+                for item in posting_collection.postings_fbo.items:
+                    if item.sku_id not in postings_info:
+                        postings_info[item.sku_id] = {
+                            'price': item.price,
+                            'model': 'FBO',
+                            'in_delivery': 0
+                        }
+                    postings_info[item.sku_id]['in_delivery'] += item.quantity
+
+            # FBS доставки
+            if posting_collection.postings_fbs and posting_collection.postings_fbs.items:
+                for item in posting_collection.postings_fbs.items:
+                    if item.sku_id not in postings_info:
+                        postings_info[item.sku_id] = {
+                            'price': item.price,
+                            'model': 'FBS',
+                            'in_delivery': 0
+                        }
+                    postings_info[item.sku_id]['in_delivery'] += item.quantity
+
+    # Группируем остатки по SKU
+    skus_data = {}
+    for r in remainders:
+        if r.sku not in skus_data:
+            # Получаем информацию из postings или используем дефолтные значения
+            posting_data = postings_info.get(r.sku, {
+                'price': 0.0,
+                'model': 'FBO',  # дефолт
+                'in_delivery': 0
+            })
+
+            skus_data[r.sku] = {
+                'article': r.offer_id,
+                'name': r.name,
+                'price': posting_data['price'],
+                'model': posting_data['model'],
+                'in_delivery': posting_data['in_delivery'],
+                'clusters': {}
+            }
+
+        # Собираем остатки по кластерам
+        if r.cluster_name:
+            total_quantity = (r.available_stock_count + r.other_stock_count +
+                            r.valid_stock_count + r.waiting_docs_stock_count)
+            if r.cluster_name in skus_data[r.sku]['clusters']:
+                skus_data[r.sku]['clusters'][r.cluster_name] += total_quantity
+            else:
+                skus_data[r.sku]['clusters'][r.cluster_name] = total_quantity
+
+    # Формируем строки данных
+    current_date = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    for sku, data in skus_data.items():
+        row = [
+            data['model'],                      # Модель
+            str(sku),                          # SKU
+            data['name'],                      # Наименование
+            str(data['price']),                # Цена
+            'active',                          # Статус
+            str(data['in_delivery']),          # В заявке
+        ]
+
+        # Добавляем остатки по кластерам в порядке заголовков
+        for cluster_name in clusters_names:
+            row.append(str(data['clusters'].get(cluster_name, 0)))
+
+        # Добавляем даты
+        row.extend([
+            date_since,     # Дата от
+            date_to,        # Дата до
+            current_date    # Дата обновления
+        ])
+
+        values_range.append(row)
+
+    return values_range

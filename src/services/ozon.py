@@ -74,7 +74,7 @@ class OzonService(BaseModel):
         """
         Метод можно использовать не более 1 р в минуту
         """
-        metrics = [AnalyticsMetrics.REVENUE, AnalyticsMetrics.ORDERED_UNITS, AnalyticsMetrics.SESSION_VIEW_PDP]
+        metrics = [AnalyticsMetrics.REVENUE, AnalyticsMetrics.ORDERED_UNITS, AnalyticsMetrics.SESSION_VIEW_PDP, AnalyticsMetrics.POSITION_CATEGORY ]
         dimension = ["sku", "month"]
         sort = Sort(key=AnalyticsMetrics.REVENUE,order="DESC")
         body = AnalyticsRequestSchema(date_from=date_since,

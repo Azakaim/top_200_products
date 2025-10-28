@@ -11,7 +11,7 @@ from src.clients.ozon.ozon_client import OzonClient
 from src.schemas.ozon_schemas import SellerAccount
 from src.mappers.transformation_functions import collect_stats, enrich_acc_context, \
     remove_archived_skus, collect_common_stats, collect_top_products_sheets_values_range, \
-    get_handling_period
+    get_handling_period, collect_account_auxiliary_table_values
 from src.pipeline.pipeline_steps import get_sheets_data, get_pipeline_ctx, get_account_postings, \
     get_account_analytics_data, get_account_remainders_skus, get_onec_products
 from src.services.backup import BackupService
@@ -87,7 +87,6 @@ async def run_pipeline(*, onec: OneCClient,
     await remove_archived_skus(acc_remainders=acc_remainders,
                                all_analytics=all_analytics)
 
-    # TODO проверь сегодня все ли ок с данными от 1с
     # собираем всю инфу о контексте аккаунта, заявках, остатках, аналитике
     acc_stats = [await collect_stats(p, r, a, onec_products_info) for p, r, a in zip(all_acc_postings,
                                                                                      acc_remainders,
@@ -98,20 +97,62 @@ async def run_pipeline(*, onec: OneCClient,
                                                  acc_stats,
                                                  months_counter=len(analytics_month_names))
 
-    test = await collect_top_products_sheets_values_range(collected_stats,
-                                                          BASE_TOP_SHEET_TITLES,
-                                                          analytics_month_names,
-                                                          date_since,
-                                                          date_to)
+    # Собираем значения для топ продуктов (список списков для Google Sheets)
+    top_products_values, cluster_count = await collect_top_products_sheets_values_range(collected_stats,
+                                                                                        BASE_TOP_SHEET_TITLES,
+                                                                                        analytics_month_names,
+                                                                                        date_since,
+                                                                                        date_to)
+
+    log.info(f"Собрано {len(top_products_values)} строк для таблицы топ продуктов")
+
+    # Записываем топ продукты в Google Sheets
+    await google_sheets.push_top_products_to_sheet(
+        sheet_name="Top Products",
+        values=top_products_values
+    )
+
+    # Форматируем таблицу топ продуктов
+    await google_sheets.format_top_products_table(
+        sheet_name="Top Products",
+        values=top_products_values,
+        cluster_count=cluster_count
+    )
+
+    # Записываем данные во вспомогательные таблицы для каждого кабинета
+    log.info("Начинаем запись вспомогательных таблиц по кабинетам")
+
     for acc_d in acc_stats:
-        # собираем заголовки дял вспомогательных таблиц отображаемых покабинетно
+        # собираем заголовки для вспомогательных таблиц отображаемых покабинетно
         acc_d.ctx.clusters_names, acc_d.ctx.sheet_titles = await enrich_acc_context(BASE_SHEETS_TITLES_BY_ACC,
                                                                                     acc_d.remainders)
-        # TODO: собрать заголовки для общей таблицы чарта товаров
 
-        # TODO: записать данные в общую таблицу
+        # Собираем данные для вспомогательной таблицы по кабинету
+        auxiliary_table_values = await collect_account_auxiliary_table_values(
+            base_titles=BASE_SHEETS_TITLES_BY_ACC,
+            remainders=acc_d.remainders,
+            postings=acc_d.postings,
+            clusters_names=acc_d.ctx.clusters_names,
+            date_since=date_since,
+            date_to=date_to
+        )
+
+        # Записываем данные в Google Sheets
+        await google_sheets.push_auxiliary_table_to_sheet(
+            sheet_name=acc_d.ctx.account_name,
+            values=auxiliary_table_values
+        )
+
+        # Форматируем таблицу
+        await google_sheets.format_auxiliary_table(
+            sheet_name=acc_d.ctx.account_name,
+            values=auxiliary_table_values,
+            cluster_count=len(acc_d.ctx.clusters_names)
+        )
+
+        log.info(f"Записана и отформатирована вспомогательная таблица для кабинета '{acc_d.ctx.account_name}'")
 
     current, peak = tracemalloc.get_traced_memory()
-    print(f"Текущая память: {current / 1024 / 1024:.2f} MB; Пик: {peak / 1024 / 1024:.2f} MB")
+    log.info(f"Текущая память: {current / 1024 / 1024:.2f} MB; Пик: {peak / 1024 / 1024:.2f} MB")
 
     tracemalloc.stop()

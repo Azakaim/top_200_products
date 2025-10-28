@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import Enum
 
 from pydantic import Field, BaseModel
+from pydantic.dataclasses import dataclass
 from typing import Optional, NamedTuple
 
 from src.pipeline import PipelineSettings
@@ -43,7 +44,8 @@ class Interval(str, Enum):
     WEEK = "Week"
     MONTH = "Month"
 
-class Period(BaseModel):
+@dataclass(frozen=True)
+class Period:
     period_type: Optional[Interval] = Field(default=None)
     month_name: Optional[str] = Field(default_factory=str)
     start_date: Optional[str | datetime] = Field(default=None)
@@ -100,10 +102,10 @@ class SortedCommonStats(BaseModel):
 
 class CollectionStats(CommonStatsBase, AccountStatsBase):
     ...
-
-class ClusterInfo(NamedTuple):
-    cluster_name: str
-    cluster_id: int
+@dataclass
+class ClusterInfo:
+    cluster_name: Optional[str] = Field(default_factory=str)
+    cluster_id: Optional[int] = Field(default_factory=int)
     remainders_quantity: Optional[int] = None
 
 class SkuInfo(NamedTuple):
@@ -113,29 +115,30 @@ class SkuInfo(NamedTuple):
     clusters_info: list[ClusterInfo]
 
 class TurnoverByPeriodSku(NamedTuple):
-    period: tuple
+    period: Period
     turnover_by_period: int | float
 
-    # def __init__(self, period: tuple, turnover_by_period: int | float):
-    #     self.period = period
-    #     self.turnover_by_period = turnover_by_period
+@dataclass(frozen=True)
+class PostingsByPeriodQuantity:
+    period: Period
+    quantity: int
 
 class AnalyticsSkuByMonths(NamedTuple):
     month: str
     unique_visitors: int
     orders_amount: int | float
     orders_quantity: int
+    search_position: float | None
 
-class ProductsByArticle(NamedTuple):
+@dataclass
+class ProductsByArticle:
     lk_name: str
     article: str
     remainders_chi6: int
     remainders_msk: int
     cost_price: float
-    # total_visitors: int
-    # total_turnover_by_article: int
     turnovers_by_periods: list[TurnoverByPeriodSku]
     analytics_by_sku_by_months: list[AnalyticsSkuByMonths]
     total_remainder_count_by_clusters: int
-    total_orders_by_period: list[tuple[Period, int]]
+    total_orders_by_period: list[PostingsByPeriodQuantity]
     products: list[SkuInfo]
