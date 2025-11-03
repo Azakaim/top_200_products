@@ -5,9 +5,9 @@ from typing import List, Tuple
 
 from pydantic import BaseModel
 
+from src.clients.ozon.ozon_client import OzonClient
 from src.schemas.google_sheets_schemas import BatchUpdateValues, SheetsValuesOut
 from src.clients.google_sheets.sheets_cli import SheetsCli
-from src.clients.ozon.ozon_cli import OzonCli
 
 from dateutil import parser
 
@@ -19,7 +19,7 @@ class PipelineContext(BaseModel):
     DELIVERY_WAY_FBO: str = "FBO"
     sheet_titles: List[str] = None
     clusters_names: List[str] = None
-    ozon_client: OzonCli
+    ozon_client: OzonClient
     sheets_cli: SheetsCli
     values_range: List[List[str]]
     account_id: str
@@ -244,18 +244,6 @@ async def push_to_sheets(context: PipelineContext, postings: dict, remainders: L
     await context.sheets_cli.update_table(sheets_values=body_value,range_table=context.range_for_clear)
     # форматируем таблицу
 
-# mappers
-async def get_sheet_values(context: PipelineContext, sheet_name: str) -> List[List[str]]:
-    """
-    Fetch the last updating date from the specified Google Sheets range.
-    :param context: PipelineContext containing necessary parameters.
-    :param sheet_name: Name of the sheet to read from.
-    :return: List[str].
-    """
-    range_sheet = sheet_name
-    last_updating_date = await context.sheets_cli.read_value_ranges(range_table=range_sheet)
-    values = [SheetsValuesOut.model_validate(r) for r in last_updating_date]
-    return  values[0].values # Возвращаем только значения
 # Service sheets
 async def format_table():
     """

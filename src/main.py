@@ -28,7 +28,7 @@ async def main():
     await setup_logging()
 
     # Если сегодня не вторник, то не обновляем таблицу
-    if not True: # await is_tuesday_today(): #TODO убрать заглушку
+    if not True: # await is_tuesday_today(): #TODO убрать заглушку и будет обновляться только раз в неделю во вт
         log.info("Tuesday not today")
         return None
 

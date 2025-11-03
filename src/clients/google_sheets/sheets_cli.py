@@ -89,17 +89,6 @@ class SheetsCli(BaseModel):
         data = sheets_values.model_dump(by_alias=True, exclude_none=True)
         await self.__move_batch(body_values=data)
 
-    async def read_value_ranges(self,range_table: List[str] | str): # TODO удалить после того как main перепишу
-        """
-        Method to read the table
-
-        :param range_table:
-        :return:
-        """
-        resp = await self.read_table(range_table=range_table)
-        value = ResponseSchemaTableData(**resp)
-        return value
-
     async def read_table(self, range_table: List[str] | str) -> dict:
         """
         Method to read the table

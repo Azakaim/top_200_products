@@ -680,7 +680,7 @@ async def collect_sheets_values(
                     # ИСПРАВЛЕНО: суммируем вместо перезаписи
                     cluster_remainders_total[key] += cluster_info.remainders_quantity or 0
 
-    # Суммарный оборот и заказы - используем списки для сохранения порядка TODO тут все неверно нам не нужно так считать данные же уже сть в объекте аналитика
+    # Суммарный оборот и заказы - используем списки для сохранения порядка
     # Структура: [(period, turnover, orders), ...]
     periods_data = []
     period_map = {}  # {period_str: index}
@@ -954,7 +954,6 @@ async def get_remainders_by_sku(all_cluster_names: list[str],
         Оптимизировано: использует defaultdict(list) для группировки кластеров
     """
     skus_info: dict[int, dict] = defaultdict(lambda: {"clusters": [], "article": None, "prod_name": None})
-    # TODO ошибка  тут нет некоторых ску в итоговом списке хотя они действующие sku в кабинетах но я думаю что sku потерялись при отсеивании остатков потому что в остатках нет действующего sku
 
     # Собираем информацию о SKU и кластерах за один проход
     for rbs in remainder_by_stock:
@@ -1064,7 +1063,6 @@ async def get_analytics_by_sku(sku: int, months: list, datums: list[MonthlyStats
 
 async def collect_onec_product_info(onec_products: OneCProductsResults, onec_articles: OneCArticlesResponse ):
     # Группировка по платформе и артикулу
-    # TODO тут основая сортировка где то ошибка и артикула попадают совсем в другие кабинеты
     grouped_data = defaultdict(list)
 
     for skus_info in onec_products.onec_responses:

@@ -5,8 +5,6 @@ from pydantic import Field, PostgresDsn
 
 class Settings(BaseSettings):
 
-    MODE: str = Field("DEV", env="MODE")
-
     POSTGRES_USER: str = Field("postgres", env="POSTGRES_USER")
     POSTGRES_PASSWORD: str = Field("postgres", env="POSTGRES_PASSWORD")
     POSTGRES_DB: str = Field("postgres", env="POSTGRES_DB")

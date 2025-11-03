@@ -3,7 +3,10 @@
 __pycache__/
 .venv
 service_account.json
-*json
 *test*
 *.parquet
 *.csv
+
+# Ignore all JSON files except example
+*.json
+!example.conf_for_sheets.json
