@@ -151,19 +151,27 @@ class SheetsCli(BaseModel):
                 _range = range_table
                  # очистить страницу
                 if clear:
-                    requests = [
-                        {"deleteSheet": {"sheetId": "2128434597"}},
-                        {"addSheet": {"properties": {"title": _range}}}
-                    ]
+                    # Получаем sheetId по имени листа
+                    sheets_info = await self.get_sheets_info()
+                    sheet_id = sheets_info.get(_range)
 
-                    return self._service.spreadsheets().batchUpdate(
-                        spreadsheetId=self.spreadsheet_id,
-                        body={'requests': requests}
-                    ).execute()
-                    return self._service.spreadsheets().values().clear(
-                        spreadsheetId=self.spreadsheet_id,
-                        range=_range
-                    ).execute()
+                    if sheet_id:
+                        # Удаляем существующий лист и создаем новый с тем же именем
+                        requests = [
+                            {"deleteSheet": {"sheetId": int(sheet_id)}},
+                            {"addSheet": {"properties": {"title": _range}}}
+                        ]
+                        return self._service.spreadsheets().batchUpdate(
+                            spreadsheetId=self.spreadsheet_id,
+                            body={'requests': requests}
+                        ).execute()
+                    else:
+                        # Если лист не найден, просто очищаем диапазон
+                        return self._service.spreadsheets().values().clear(
+                            spreadsheetId=self.spreadsheet_id,
+                            range=_range
+                        ).execute()
+
                 response = self._service.spreadsheets().values().batchGet(
                     spreadsheetId=self.spreadsheet_id,
                     ranges=_range,
