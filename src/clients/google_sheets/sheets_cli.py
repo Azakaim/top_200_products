@@ -128,7 +128,6 @@ class SheetsCli(BaseModel):
             raise ValueError("Cannot specify both 'fields' and 'range_table' parameters at the same time and "
                              "'body' must not be empty.")
         response = {}
-
         # Если body не пустой, то выполняем batchUpdate значений таблицы
         if body_values:
             response = self._service.spreadsheets().values().batchUpdate(
@@ -152,9 +151,18 @@ class SheetsCli(BaseModel):
                 _range = range_table
                  # очистить страницу
                 if clear:
+                    requests = [
+                        {"deleteSheet": {"sheetId": "2128434597"}},
+                        {"addSheet": {"properties": {"title": _range}}}
+                    ]
+
+                    return self._service.spreadsheets().batchUpdate(
+                        spreadsheetId=self.spreadsheet_id,
+                        body={'requests': requests}
+                    ).execute()
                     return self._service.spreadsheets().values().clear(
                         spreadsheetId=self.spreadsheet_id,
-                        range=_range,
+                        range=_range
                     ).execute()
                 response = self._service.spreadsheets().values().batchGet(
                     spreadsheetId=self.spreadsheet_id,

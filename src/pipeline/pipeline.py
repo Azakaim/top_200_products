@@ -87,7 +87,7 @@ async def run_pipeline(*, onec: OneCClient,
     await remove_archived_skus(acc_remainders=acc_remainders,
                                all_analytics=all_analytics)
 
-    # собираем всю инфу о контексте аккаунта, заявках, остатках, аналитике
+    # собираем всю инфу о контексте аккаунта, заявках, остатках, аналитике TODO после удаления архивных ску все дейтвующие на месте
     acc_stats = [await collect_stats(p, r, a, onec_products_info) for p, r, a in zip(all_acc_postings,
                                                                                      acc_remainders,
                                                                                      all_analytics)]
@@ -97,7 +97,7 @@ async def run_pipeline(*, onec: OneCClient,
                                                  acc_stats,
                                                  months_counter=len(analytics_month_names))
 
-    # Собираем значения для топ продуктов (список списков для Google Sheets)
+    # Собираем значения для топ продуктов (список списков для Google Sheets) TODO тут все ску даже после коллекта
     top_products_values, cluster_count = await collect_top_products_sheets_values_range(collected_stats,
                                                                                         BASE_TOP_SHEET_TITLES,
                                                                                         analytics_month_names,

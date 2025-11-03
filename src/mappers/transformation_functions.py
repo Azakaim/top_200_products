@@ -489,6 +489,7 @@ async def collect_top_products_sheets_values_range(common_stats: SortedCommonSta
                                                    months: list[str],
                                                    date_since:str,
                                                    date_to: str):
+
     # итоговый лист продуктов по артикулам
     products_by_article = []
     lk_names = []
@@ -537,6 +538,7 @@ async def collect_top_products_sheets_values_range(common_stats: SortedCommonSta
 
     for cs in common_stats.sorted_stats:
         remainders_skus_info = await get_remainders_by_sku(all_cluster_names, cs.remainders_by_stock)
+        # TODO Псоле ф-ии выше теряется дествующее ску 2322963984
         all_articles.update({art.article: art.prod_name for art in remainders_skus_info})
         # если в 1 с не будет строгого соответствия артикулу
         all_articles.update({'соответствие не найдено': None})
@@ -647,10 +649,6 @@ async def collect_sheets_values(
     Returns:
         int: обновленный номер строки
     """
-    #TODO № п/п	Артикул ЛК	Артикул 1С	SKU	Наименование	ЛК	Ост. 1С ЧИ6 27-10	Ост. 1С МСК 27-10	Москва, МО и Дальние регионы	Урал	Юг	Воронеж	Сибирь	Ярославль	Казань	Беларусь	Кавказ	Тюмень	Саратов	Уфа	Самара	Дальний Восток	Красноярск	Санкт-Петербург и СЗО	Казахстан	Узбекистан	Калининград	Армения	Кыргызстан	Общий итог	Оборот сентябрь 2025	Заказов сентябрь 2025	Оборот октябрь 2025	Заказов октябрь 2025	Динамика в обороте по ценам	Оборот 20-10 26-10	Заказов 20-10 26-10	ФБС	ФБО	посетители сентябрь 2025	позиция в выдаче сентябрь 2025	посетители октябрь 2025	позиция в выдаче октябрь 2025	АЗП	1CЗП	Комментарии ФБО
-    #TODO 1	03.01.201.002	03.01.201.002		Двигатель бензиновый с электростартером 17 л.с Brait BR445PE , двигатель для мотоблока	AI	41	4	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	1	0	70560.0	70560.0		0	2	2				18900.0	149		0
-    # получается нессотвествие региона и остактка должно быть строк остатки по кластеру обороты так же непраильно записываются как занеделю так и за месяцы . позиццяивыдачи перпутана с оборотом помоему
-
     # если артикул == соответствие не найдено под ним все ску так же следует собрать
     if not prod_by_art:
         return row_number
@@ -786,6 +784,7 @@ async def collect_sheets_values(
     # Строки для каждого SKU под артикулом
     for product in prod_by_art:
         for sku_info in product.products:
+
             sku_row = [
                 "",  # № п/п (пусто для строк SKU)
                 "",  # Артикул ЛК
@@ -802,11 +801,14 @@ async def collect_sheets_values(
 
             # Общий итог остатков записывать для одного ску не нужно это нужно только для артикула
             sku_row.append("")
-
+            # TODO разобраться как артикул попал в другой кабинет в какой сортировке
+            if 1990519270 == sku_info.sku:
+                print(sku_info.sku)
 
             turnovers_by_weeks = []
             for product in prod_by_art:
                 for i, turnover in enumerate(product.turnovers_by_periods):
+                    # TODO тут ску повтоярются занченяи накапвливаются потому что путанница с артикулом и нет никаих условий соответсивя ску == ску например
                     if turnover.period.period_type != Interval.MONTH:
                         # это идет после колонки динамика поэтому накапливаем отдельно
                         turnovers_by_weeks.extend([str(turnover.turnover_by_period),
@@ -951,7 +953,7 @@ async def get_remainders_by_sku(all_cluster_names: list[str], remainder_by_stock
         Оптимизировано: использует defaultdict(list) для группировки кластеров
     """
     skus_info: dict[int, dict] = defaultdict(lambda: {"clusters": [], "article": None, "prod_name": None})
-
+    # TODO ошибка  тут нет некоторых ску в итоговом списке хотя они действующие ску в кабинетах н оя думаю что ску потерялсиь при отсеивании оастков потому что в остатках нет действующего ску
     # Собираем информацию о SKU и кластерах за один проход
     for rbs in remainder_by_stock:
         for r in rbs.remainders:
@@ -1059,6 +1061,7 @@ async def get_analytics_by_sku(sku: int, months: list, datums: list[MonthlyStats
 
 async def collect_onec_product_info(onec_products: OneCProductsResults, onec_articles: OneCArticlesResponse ):
     # Группировка по платформе и артикулу
+    # TODO тут основая сортировка где то ошибка и артикула попадают совсем в другие кабинеты
     grouped_data = defaultdict(list)
 
     for skus_info in onec_products.onec_responses:
