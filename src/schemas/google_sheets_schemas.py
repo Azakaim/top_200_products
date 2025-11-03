@@ -1,9 +1,10 @@
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, AliasChoices, field_validator
+from enum import StrEnum
+from typing import List, Optional, Literal, Any, Union
+from pydantic import BaseModel, Field, AliasChoices
 
 
 class SheetsValues(BaseModel):
-    range: str
+    range: str = Field(..., description="The A1 notation of the values to update.")
     values: List[List[str]] = Field(default_factory=list)
 
 class SheetsValuesInTo(SheetsValues):
@@ -18,6 +19,10 @@ class SheetsValuesOut(SheetsValues):
     model_config = {
         "populate_by_name": True
     }
+
+class ResponseSchemaTableData(BaseModel):
+    valueRanges: Optional[list[SheetsValuesOut]] = Field(default_factory=list)
+
 # ===== БАЗОВЫЕ ТИПЫ =====
 
 class Color(BaseModel):
@@ -134,35 +139,34 @@ class CellData(BaseModel):
         "populate_by_name": True
     }
 
-FieldPath =(
-    "userEnteredFormat.textFormat.bold",
-    "userEnteredFormat.textFormat.italic",
-    "userEnteredFormat.textFormat.underline",
-    "userEnteredFormat.textFormat.strikethrough",
-    "userEnteredFormat.textFormat.fontFamily",
-    "userEnteredFormat.textFormat.fontSize",
-    "userEnteredFormat.textFormat.foregroundColor",
-    "userEnteredFormat.backgroundColor",
-    "userEnteredFormat.horizontalAlignment",
-    "userEnteredFormat.verticalAlignment",
-    "userEnteredFormat.wrapStrategy",
-)
-
-FilePathLiteral = Literal[*FieldPath]
+class FieldPath(StrEnum):
+    """
+    Тип для полей, которые нужно обновить в RepeatCellRequest.
+    Используется для указания путей к полям в формате Google Sheets API.
+    """
+    BOLD = "userEnteredFormat.textFormat.bold"
+    ITALIC = "userEnteredFormat.textFormat.italic"
+    UNDERLINE = "userEnteredFormat.textFormat.underline"
+    STRIKETHROUGH = "userEnteredFormat.textFormat.strikethrough"
+    FONT_FAMILY = "userEnteredFormat.textFormat.fontFamily"
+    FONT_SIZE = "userEnteredFormat.textFormat.fontSize"
+    FOREGROUND_COLOR = "userEnteredFormat.textFormat.foregroundColor"
+    BACKGROUND_COLOR = "userEnteredFormat.backgroundColor"
+    HORIZONTAL_ALIGNMENT = "userEnteredFormat.horizontalAlignment"
+    VERTICAL_ALIGNMENT = "userEnteredFormat.verticalAlignment"
+    WRAP_STRATEGY = "userEnteredFormat.wrapStrategy"
 
 class RepeatCellRequest(BaseModel):
     range: GridRange
     cell: CellData
-    fields: List[FieldPathLiteral]
+    fields: Any
 
-    @field_validator("fields")
-    @classmethod
-    def _normalize(cls, v: str) -> str:
-        v = ",".join(v) if isinstance(v, list) else v
-        if v not in tuple(FieldPath):
-            raise ValueError(f"ожидали {FieldPath}")
-        return v
-    # например "userEnteredFormat.textFormat.bold, userEnteredFormat.backgroundColor"
+    def model_post_init(self, __context):
+        if not self.fields:
+            raise ValueError("Fields must not be empty. Use FIELD_PATHS to specify the fields to update.")
+        # Преобразуем строки в FieldPath
+        if isinstance(self.fields, list):
+            self.fields = ",".join(self.fields)
 
 # ===== MERGE CELLS =====
 
@@ -218,8 +222,22 @@ class AutoResizeDimensionsRequest(BaseModel):
     dimensions: DimensionRange
 
 # ===== ОБЪЕДИНИТЕЛЬНЫЙ ТИП REQUEST =====
+class Properties(BaseModel):
+    title: Optional[str] = Field(default=None)
 
-class Request(BaseModel):
+class AddSheet(BaseModel):
+    properties: Optional[Properties] = Field(default=None)
+
+class RequestToTable:
+    ...
+
+class BatchUpdateValues(BaseModel):
+    value_input_option: Literal["RAW", "USER_ENTERED"] = Field(default="USER_ENTERED", alias="valueInputOption",
+                                                               validation_alias=AliasChoices("value_input_option",
+                                                                                             "valueInputOption"))
+    data: List[SheetsValuesOut] = Field(default_factory=list)
+
+class BatchUpdateFormat(BaseModel, RequestToTable):
     repeat_cell: Optional[RepeatCellRequest] = Field(default=None,
                                                      alias="repeatCell",
                                                      validation_alias=AliasChoices("repeat_cell",
@@ -234,11 +252,15 @@ class Request(BaseModel):
                                                                           alias="autoResizeDimensions",
                                                                           validation_alias=AliasChoices("auto_resize_dimensions",
                                                                                                         "autoResizeDimensions"))
+    add_sheet: Optional[AddSheet] = Field(default=None,
+                                          alias="addSheet",
+                                          validation_alias=AliasChoices("add_sheet",
+                                                                        "addSheet"))
 
     model_config = {
         "populate_by_name": True,
         "extra": "forbid"  # чтоб не проскочило лишнего forbid --> строго следить за полями
     }
 
-class BatchUpdateFormatBody(BaseModel):
-    requests: List[Request]
+class Body(BaseModel):
+    requests: List[Union[BatchUpdateFormat, BatchUpdateValues]] = Field(default_factory=list)

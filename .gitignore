@@ -1,5 +1,12 @@
 .env
 .idea/
 __pycache__/
-.env
+.venv
 service_account.json
+*test*
+*.parquet
+*.csv
+
+# Ignore all JSON files except example
+*.json
+!example.conf_for_sheets.json
