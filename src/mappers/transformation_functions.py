@@ -322,12 +322,13 @@ async def parse_postings(postings_data: list[dict]) -> list:
     :return: Список преобразованных данных.
     """
     posting_items = []
+
     for posting in postings_data:
         status = posting.get("status")
-        if status != 'cancelled':
-            products = posting.get("products", []) or []
-        else:
+        if status == 'cancelled':
             continue
+
+        products = posting.get("products", []) or []
         if products:
             # добавляем преобразованные продукты в общий список
             posting_items.extend([
@@ -341,6 +342,7 @@ async def parse_postings(postings_data: list[dict]) -> list:
                 )
                 for prod in products if prod.get("sku")
             ])
+
     return posting_items
 
 async def parse_skus(skus_data: list[dict]) -> list:
@@ -486,6 +488,18 @@ async def calculate_sku_turnovers_and_postings(sku, postings_by_period: list[Pos
         postings_quantity_by_period.append(PostingsByPeriodQuantity(pbp.period, postings_quantity))
     return turnovers_by_periods, postings_quantity_by_period, price
 
+
+async def sort_sku_by_price(flatten_postings: list[Item]):
+    skus = {}
+    for p in flatten_postings:
+        if p.sku_id not in skus:
+            skus[p.sku_id] = p.price
+        else:
+            if p.price < skus[p.sku_id]:
+                skus[p.sku_id] = p.price
+    return skus
+
+
 async def collect_top_products_sheets_values_range(common_stats: SortedCommonStats,
                                                    base_top_sheet_titles: list[str],
                                                    months: list[str],
@@ -497,7 +511,16 @@ async def collect_top_products_sheets_values_range(common_stats: SortedCommonSta
     lk_names = []
     values_for_sheet_top_products = []
     warehouse_id_to_name = {}
-    all_articles = {}  # Убрана лишняя инициализация как set() на строке 500
+    all_articles = {}
+
+    # сортируем ску и цену для дальнейшего сопоставления
+    flatten_postings = list(chain.from_iterable([ # раскатываю лист продуктов
+        list(chain.from_iterable([p.postings for p in pbp.postings_by_period])) # раскатываю лист постингов
+        for pbp in common_stats.sorted_stats
+    ]))
+
+    # прайс от магазина к магазину разный, поэтому здесь выставлен для каждого ску минимальный
+    skus_by_price = await sort_sku_by_price(flatten_postings)
 
     # получаем id кластеров и имена, инициализируем дикт с ключами id кабинета: имя кластера
     cluster_ids, all_cluster_names = await get_cluster_info(common_stats.sorted_stats,
@@ -523,8 +546,8 @@ async def collect_top_products_sheets_values_range(common_stats: SortedCommonSta
                 onec_by_sku[int(sku_info.sku_fbs)] = nom
 
     for cs in common_stats.sorted_stats:
-        remainders_skus_info = await get_remainders_by_sku(all_cluster_names, cs.remainders_by_stock)
-        # TODO Псоле ф-ии выше теряется дествующее ску 2322963984 2811951731
+        remainders_skus_info = await get_remainders_by_sku(all_cluster_names, cs.remainders_by_stock, skus_by_price)
+
         all_articles.update({art.article: art.prod_name for art in remainders_skus_info})
         # если в 1 с не будет строгого соответствия артикулу
         all_articles.update({'соответствие не найдено': None})
@@ -620,7 +643,6 @@ async def collect_sheets_values(
     Формирует строки для Google таблицы: первая строка - артикул, под ней все SKU
 
     Args:
-        accordingly_cluster_names_to_ids: словарь соответствий айдишника имени кластера
         prod_by_art: список продуктов по одному артикулу
         all_articles: словарь всех артикулов
         expanded_values: список для добавления строк
@@ -719,7 +741,7 @@ async def collect_sheets_values(
         article,  # Артикул 1С
         "",  # SKU (пусто для строки артикула)
         prod_name,  # Наименование(
-        first_product.lk_name,  # ЛК
+        "",  # колонка ЛК
         str(total_chi6),  # Ост. 1С ЧИ6
         str(total_msk),  # Ост. 1С МСК
     ]
@@ -737,23 +759,9 @@ async def collect_sheets_values(
     weekly_periods = [p for p in periods_data if hasattr(p['period'], 'period_type') and p['period'].period_type == Interval.WEEK]
 
     # оборот заказов за мес
-    # ИСПРАВЛЕНО: используем заказы из аналитики вместо постингов для согласованности с данными SKU
-    # Сопоставляем по названию месяца, а не по индексу
+    # ИСПРАВЛЕНО: используем заказы из постингов (без отменённых), а не из аналитики
     for m_per in monthly_periods:
-        orders_from_analytics = 0
-        period_obj = m_per['period']
-        month_name = period_obj.month_name if hasattr(period_obj, 'month_name') else None
-
-        if month_name:
-            # Ищем соответствующий месяц в total_analytics
-            for analytics_month, ta in total_analytics.items():
-                # Сравниваем первое слово месяца
-                month_part = analytics_month.split(' ')[0] if isinstance(analytics_month, str) else analytics_month
-                if month_part == month_name:
-                    orders_from_analytics = ta['orders_quantity']
-                    break
-
-        article_row.extend([str(m_per['turnover']), str(int(orders_from_analytics))])
+        article_row.extend([str(m_per['turnover']), str(m_per['orders'])])
 
     # Динамика в обороте (можно добавить расчет)
     article_row.append("")  # TODO: расчет динамика
@@ -823,33 +831,20 @@ async def collect_sheets_values(
             }
 
             for turnover in product.turnovers_by_periods:
+                # ИСПРАВЛЕНО: Для всех периодов (месячных и недельных) используем данные из постингов (total_orders_by_period)
+                orders_qty = 0
+                # Ищем количество заказов по периоду, сопоставляя по датам
+                for order_period in product.total_orders_by_period:
+                    # Сравниваем периоды по типу и датам
+                    if (order_period.period.period_type == turnover.period.period_type and
+                        order_period.period.start_date == turnover.period.start_date and
+                        order_period.period.end_date == turnover.period.end_date):
+                        orders_qty = order_period.quantity
+                        break
+
                 if turnover.period.period_type == Interval.MONTH:
-                    # ИСПРАВЛЕНО: сопоставляем по названию месяца, а не по индексу
-                    orders_qty = 0
-                    month_name = turnover.period.month_name if hasattr(turnover.period, 'month_name') else None
-                    if month_name:
-                        # Ищем соответствующую аналитику по названию месяца
-                        matching_analytics = None
-                        for month_key, analytics in analytics_by_month.items():
-                            # Сравниваем первое слово месяца (например "сентябрь" из "сентябрь 2024")
-                            month_part = month_key.split(' ')[0] if isinstance(month_key, str) else month_key
-                            if month_part == month_name:
-                                matching_analytics = analytics
-                                break
-                        if matching_analytics:
-                            orders_qty = matching_analytics.orders_quantity
                     monthly_turnovers.extend([str(turnover.turnover_by_period), str(orders_qty)])
                 else:
-                    # ИСПРАВЛЕНО: Для недельных оборотов используем данные из постингов (total_orders_by_period)
-                    orders_qty = 0
-                    # Ищем количество заказов по периоду, сопоставляя по датам
-                    for order_period in product.total_orders_by_period:
-                        # Сравниваем периоды по типу и датам
-                        if (order_period.period.period_type == turnover.period.period_type and
-                            order_period.period.start_date == turnover.period.start_date and
-                            order_period.period.end_date == turnover.period.end_date):
-                            orders_qty = order_period.quantity
-                            break
                     turnovers_by_weeks.extend([str(turnover.turnover_by_period), str(orders_qty)])
 
             # Добавляем месячные обороты
@@ -873,7 +868,7 @@ async def collect_sheets_values(
             sku_row.append(str(round(product.cost_price, 2)))
 
             # цена товара
-            sku_row.append("")
+            sku_row.append(f"{sku_info.price}" if sku_info.price > 0 else "цена не определена/не было продаж")
 
             # Комментарии
             sku_row.append("")
@@ -945,54 +940,22 @@ async def upsert_sku_cluster(sku_info, r, q: int) -> None:
     # инкремент количества
     entry["quantity"] += q
 
-async def unpack_sku_info(skus_info: dict):
-    skus_by_cluster = []
-    META_KEYS = {"article", "cluster_id", "prod_name"}
-
-    for k, v in skus_info.items():
-        sku = k
-        cluster_id = v.get("cluster_id")
-        article = v.get("article")
-        prod_name = v.get("prod_name")
-        if isinstance(v, dict):
-            # для сбора инфы по кластерам
-            clusters_info = []
-            for cluster_name, q in v.items():
-                if cluster_name in META_KEYS:
-                    continue
-                clusters_info.append(
-                    ClusterInfo(
-                        cluster_name=cluster_name,
-                        cluster_id=cluster_id,
-                        remainders_quantity=q["quantity"],
-                    )
-                )
-            # собираем список ску инфо с кластерами
-            skus_by_cluster.append(
-                SkuInfo(
-                sku=sku,
-                article=article,
-                prod_name=prod_name,
-                clusters_info=clusters_info
-            ))
-    return skus_by_cluster
-
 async def enrich_sku_info_by_clusters(all_cluster_names: list, skus_info: dict[int, SkuInfo]):
     for k, v in skus_info.items():
-        if 2811951731 == k:
-            print()
         sku_clusters = [cm.cluster_name for cm in v.clusters_info]
         required_clusters = list(set(all_cluster_names) - set(sku_clusters))
         v.clusters_info.extend([ClusterInfo(cluster_name=x, remainders_quantity=0) for x in required_clusters])
 
-
-async def get_remainders_by_sku(all_cluster_names: list[str], remainder_by_stock: list[RemaindersByStock]) -> list[SkuInfo]:
+async def get_remainders_by_sku(all_cluster_names: list[str],
+                                remainder_by_stock: list[RemaindersByStock],
+                                skus_by_price: dict) -> list[SkuInfo]:
     """
         Функция собирает объект SkuInfo который содержит параметры кластера и остатков в нем по sku
         Оптимизировано: использует defaultdict(list) для группировки кластеров
     """
     skus_info: dict[int, dict] = defaultdict(lambda: {"clusters": [], "article": None, "prod_name": None})
-    # TODO ошибка  тут нет некоторых ску в итоговом списке хотя они действующие ску в кабинетах н оя думаю что ску потерялсиь при отсеивании оастков потому что в остатках нет действующего ску
+    # TODO ошибка  тут нет некоторых ску в итоговом списке хотя они действующие sku в кабинетах но я думаю что sku потерялись при отсеивании остатков потому что в остатках нет действующего sku
+
     # Собираем информацию о SKU и кластерах за один проход
     for rbs in remainder_by_stock:
         for r in rbs.remainders:
@@ -1018,7 +981,8 @@ async def get_remainders_by_sku(all_cluster_names: list[str], remainder_by_stock
             sku=sku,
             article=data["article"],
             prod_name=data["prod_name"],
-            clusters_info=data["clusters"]
+            clusters_info=data["clusters"],
+            price=skus_by_price.get(sku,0)
         )
         for sku, data in skus_info.items()
     }

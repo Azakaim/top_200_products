@@ -113,6 +113,7 @@ class SkuInfo(NamedTuple):
     article: str
     prod_name: str
     clusters_info: list[ClusterInfo]
+    price: float
 
 class TurnoverByPeriodSku(NamedTuple):
     period: Period
